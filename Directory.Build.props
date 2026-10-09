@@ -8,13 +8,4 @@
 
   <Import Project="build/Tec.Build.props" />
 
-  <!--
-    TEMPORÁRIO: o TEC.Core 0.1.0 só existe como prévia (0.1.0-preview.N). O pack da versão do PR (0.1.0, estável)
-    recusaria a dependência de prévia (NU5104). Remover assim que o TEC.Core 0.1.0 estável for publicado e antes de
-    publicar o TEC.Messaging 0.1.0 estável.
-  -->
-  <PropertyGroup>
-    <NoWarn>$(NoWarn);NU5104</NoWarn>
-  </PropertyGroup>
-
 </Project>
