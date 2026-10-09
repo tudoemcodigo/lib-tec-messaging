@@ -68,6 +68,7 @@ internal sealed class MessagingMetrics : IDisposable
     private readonly Counter<long> _publishFailures;
     private readonly Counter<long> _dead;
     private readonly Counter<long> _consumed;
+    private readonly Counter<long> _circuitStateChanges;
     private readonly Histogram<double> _consumeDuration;
     private readonly ConcurrentDictionary<string, long> _deadLetters = new(StringComparer.Ordinal);
     private OutboxSnapshot? _outbox;
@@ -81,6 +82,8 @@ internal sealed class MessagingMetrics : IDisposable
         _dead = _meter.CreateCounter<long>("tec.messaging.outbox.dead", "{message}", "Mensagens que esgotaram as tentativas.");
         _consumed = _meter.CreateCounter<long>("tec.messaging.consumer.messages", "{message}", "Mensagens consumidas, por desfecho.");
         _consumeDuration = _meter.CreateHistogram<double>("tec.messaging.consumer.duration", "s", "Duração do processamento de uma mensagem.");
+        _circuitStateChanges = _meter.CreateCounter<long>("tec.messaging.connection.circuit.state_changes", "{change}",
+            "Mudanças de estado do circuit breaker da conexão com o broker.");
         _meter.CreateObservableGauge("tec.messaging.outbox.pending", () => Observe(s => s.Pending), "{message}", "Mensagens pendentes no Outbox.");
         _meter.CreateObservableGauge("tec.messaging.outbox.pending_with_errors", () => Observe(s => s.PendingWithErrors), "{message}", "Pendentes que já falharam.");
         _meter.CreateObservableGauge("tec.messaging.outbox.dead_messages", () => Observe(s => s.Dead), "{message}", "Mensagens mortas aguardando o administrador.");
@@ -109,6 +112,9 @@ internal sealed class MessagingMetrics : IDisposable
 
     /// <summary>Atualiza a quantidade de mensagens na DLQ de uma fila.</summary>
     public void UpdateDeadLetters(string queue, long count) => _deadLetters[queue] = count;
+
+    public void CircuitStateChanged(string system, string state) =>
+        _circuitStateChanges.Add(1, new KeyValuePair<string, object?>("messaging.system", system), new KeyValuePair<string, object?>("tec.messaging.circuit.state", state));
 
     public void Dispose() => _meter.Dispose();
 

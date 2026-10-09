@@ -10,7 +10,7 @@
     e no CI; o projeto vizinho só entra com -p:TecUseLocalProjects=true (build/Tec.Build.targets).
   -->
   <ItemGroup>
-    <PackageVersion Include="TEC.Core" Version="0.1.0-preview.1" />
+    <PackageVersion Include="TEC.Core" Version="0.1.0" />
     <PackageVersion Include="TEC.Vault" Version="0.0.1" />
     <PackageVersion Include="TEC.Vault.InMemory" Version="0.0.1" />
   </ItemGroup>
@@ -33,6 +33,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="Polly.Core" Version="8.8.0" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.1" />
     <PackageVersion Include="TUnit" Version="1.73.5" />
   </ItemGroup>

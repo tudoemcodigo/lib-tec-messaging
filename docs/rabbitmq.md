@@ -66,6 +66,20 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps) : RabbitMqCon
 
 Pausa (ex.: circuit breaker de uma dependência): resolva o consumidor (singleton) e chame `Pause()`/`Resume()`.
 
+### Resiliência da conexão
+
+- **Circuit breaker da conexão** (`Polly.Core`, `RabbitMqOptions.CircuitBreaker`, ligado por padrão): a conexão é única no
+  processo e serve publicador, consumidores, monitor de DLQ e health check. Com o broker (ou o cofre) fora do ar, depois de
+  falhas suficientes o circuito abre e quem pede a conexão recebe `RabbitMqCircuitOpenException` na hora, sem tocar no cofre
+  nem no broker: acaba a tempestade de reconexões. Depois de `BreakDuration`, uma tentativa de teste decide se fecha. O
+  Outbox mantém as mensagens e tenta de novo depois (o circuito aberto conta como falha da tentativa).
+- **Reconexão do consumidor** com espera exponencial e variação de ±20% (`ReconnectDelay` → `MaxReconnectDelay`), zerada
+  quando o consumo é retomado.
+- **Health check** com o circuito aberto responde `Unhealthy` na hora, sem nova tentativa. Fora disso espera no máximo 5 s,
+  sem cancelar a criação da conexão (o desfecho real é contado pelo circuito).
+- Na tentativa de teste (meia-abertura), cancelamento conta como falha: o circuito só fecha com o broker respondendo.
+- O retry das **mensagens** continua sendo do broker (filas de espera e DLQ): o processamento nunca é repetido em memória.
+
 Administração da DLQ (`IDeadLetterAdministration`): `CountAsync`, `ListAsync` (sem remover), `RequeueAsync` (tentativas
 zeradas; um `handler` opcional pode tratar a mensagem por conta própria) e `DiscardAsync`.
 
@@ -82,6 +96,13 @@ zeradas; um `handler` opcional pode tratar a mensagem por conta própria) e `Dis
 | `PublishTimeout` | 10 s | Espera pela confirmação |
 | `Heartbeat` | 30 s | Heartbeat da conexão |
 | `DeadLetterMonitorInterval` | 1 min | Contagem das DLQs para a métrica (0 desliga) |
+| `ReconnectDelay` | 1 s | Espera inicial para reabrir o consumo depois de uma queda (100 ms a 1 min); dobra a cada falha seguida |
+| `MaxReconnectDelay` | 1 min | Maior espera entre tentativas de reabrir o consumo (1 s a 10 min) |
+| `CircuitBreaker:Enabled` | `true` | Circuit breaker da criação da conexão |
+| `CircuitBreaker:FailureRatio` | 0,5 | Proporção de falhas que abre o circuito (> 0 e ≤ 1) |
+| `CircuitBreaker:MinimumThroughput` | 5 | Mínimo de tentativas de conexão na janela (2 a 10.000) |
+| `CircuitBreaker:SamplingDuration` | 30 s | Janela de amostragem (0,5 s a 1 h) |
+| `CircuitBreaker:BreakDuration` | 30 s | Tempo aberto antes da tentativa de teste (0,5 s a 1 h) |
 
 | `QueueDefinition` | Padrão | Descrição |
 |---|---|---|
@@ -98,6 +119,7 @@ zeradas; um `handler` opcional pode tratar a mensagem por conta própria) e `Dis
 | `InvalidOperationException: Segredo 'rabbitmq' ... indisponível` | Segredo ausente no cofre | Crie o segredo com a URI |
 | `PRECONDITION_FAILED` ao declarar fila | Fila existente com argumentos diferentes (ex.: clássica) | Apague a fila antiga ou use outro nome |
 | Health check `Unhealthy` | Broker fora ou credencial inválida | Verifique rede e segredo |
+| `RabbitMqCircuitOpenException` · health check "circuito aberto" | Falhas repetidas ao conectar (broker, rede, credencial ou cofre); log 4401 | Corrija a causa; o circuito testa de novo depois de `BreakDuration` (logs 4402 e 4403) |
 
 ## 🛡️ Segurança
 

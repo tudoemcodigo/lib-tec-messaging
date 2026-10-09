@@ -111,6 +111,7 @@ public abstract partial class RabbitMqConsumer : BackgroundService
     private IChannel? _channel;
     private string? _tag;
     private volatile bool _pauseRequested;
+    private int _reconnectFailures;
 
     /// <summary>Cria o consumidor.</summary>
     /// <param name="dependencies">Dependências comuns (do container).</param>
@@ -194,6 +195,9 @@ public abstract partial class RabbitMqConsumer : BackgroundService
                     LogConsuming(queue.Name, queue.Prefetch);
                 }
 
+                // Canal aberto e consumo no estado pedido: a próxima queda recomeça a espera do início
+                _reconnectFailures = 0;
+
                 await _signal.WaitAsync(CheckInterval, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -202,11 +206,15 @@ public abstract partial class RabbitMqConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                LogChannelFailed(ex, queue.Name);
+                var delay = ReconnectDelay(++_reconnectFailures);
+                if (ex is RabbitMqCircuitOpenException)
+                    LogCircuitOpenWaiting(queue.Name, delay);
+                else
+                    LogChannelFailed(ex, queue.Name);
                 await CloseChannelAsync().ConfigureAwait(false);
                 try
                 {
-                    await Task.Delay(CheckInterval, _deps.Time, stoppingToken).ConfigureAwait(false);
+                    await Task.Delay(delay, _deps.Time, stoppingToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -216,6 +224,20 @@ public abstract partial class RabbitMqConsumer : BackgroundService
         }
 
         await CloseChannelAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Espera antes de reabrir o consumo depois da falha número <paramref name="failures"/>: exponencial a partir de
+    /// <see cref="RabbitMqOptions.ReconnectDelay"/> até <see cref="RabbitMqOptions.MaxReconnectDelay"/>, com variação de ±20% para
+    /// que várias instâncias não reconectem juntas.
+    /// </summary>
+    internal TimeSpan ReconnectDelay(int failures)
+    {
+        var settings = _deps.Options.Value;
+        double baseMs = settings.ReconnectDelay.TotalMilliseconds * Math.Pow(2, Math.Min(failures - 1, 30));
+        double capped = Math.Min(baseMs, settings.MaxReconnectDelay.TotalMilliseconds);
+        double jitter = 0.8 + (System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 401) / 1000.0);
+        return TimeSpan.FromMilliseconds(Math.Min(capped * jitter, settings.MaxReconnectDelay.TotalMilliseconds));
     }
 
     private async Task OpenChannelAsync(QueueDefinition queue, CancellationToken ct)
@@ -394,4 +416,7 @@ public abstract partial class RabbitMqConsumer : BackgroundService
 
     [LoggerMessage(EventId = 4210, Level = LogLevel.Warning, Message = "Transporte RabbitMQ desligado: consumidor da fila {Queue} não iniciado")]
     private partial void LogDisabled(string queue);
+
+    [LoggerMessage(EventId = 4211, Level = LogLevel.Debug, Message = "Fila {Queue}: circuito da conexão aberto; nova tentativa em {Delay}")]
+    private partial void LogCircuitOpenWaiting(string queue, TimeSpan delay);
 }
