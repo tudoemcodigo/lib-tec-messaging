@@ -96,11 +96,14 @@ internal sealed class RabbitMqHealthCheck(RabbitMqConnection connection, IOption
     {
         if (!options.Value.Enabled)
             return HealthCheckResult.Healthy("Transporte RabbitMQ desligado.");
+        // Circuito aberto: responde na hora, sem mais uma tentativa de conexão (o health check não pode virar tempestade)
+        if (!connection.IsOpen && connection.IsCircuitOpen)
+            return HealthCheckResult.Unhealthy("RabbitMQ indisponível (circuito aberto).");
         try
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(5));
-            var open = await connection.GetAsync(timeout.Token).ConfigureAwait(false);
+            // Espera no máximo 5 s, mas sem cancelar a criação da conexão: ela termina com o desfecho real (contado pelo circuito);
+            // cancelar aqui faria um broker que não responde parecer saudável para o circuit breaker
+            var open = await connection.GetAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
             return open.IsOpen ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy("Conexão com o RabbitMQ fechada.");
         }
         catch (Exception ex)

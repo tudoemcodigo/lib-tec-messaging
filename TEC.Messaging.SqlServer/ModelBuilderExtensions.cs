@@ -36,7 +36,13 @@ public static class ModelBuilderExtensions
             b.Property(m => m.Payload).HasColumnType("nvarchar(max)").IsRequired();
             b.Property(m => m.Status).HasConversion<byte>();
             b.Property(m => m.LastError).HasMaxLength(OutboxOutcome.MaxErrorLength);
-            b.HasIndex(m => new { m.Status, m.NextAttemptAt, m.OccurredAt }).HasFilter("[Status] = 0").HasDatabaseName($"IX_{outboxTable}_Pending");
+            // Na ordem da reserva (OccurredAt, Id): o TOP com UPDLOCK/READPAST lê as pendentes em ordem e para no tamanho do lote,
+            // travando só as linhas que reserva. Com outra ordem no índice o SQL Server leria e ordenaria todas as pendentes,
+            // travando-as de passagem, e reservas simultâneas pulariam (READPAST) mensagens que nenhuma delas pegaria
+            b.HasIndex(m => new { m.OccurredAt, m.Id })
+                .HasFilter("[Status] = 0")
+                .IncludeProperties(m => new { m.NextAttemptAt, m.LeasedUntil })
+                .HasDatabaseName($"IX_{outboxTable}_Pending");
             b.HasIndex(m => m.PublishedAt).HasFilter("[Status] = 1").HasDatabaseName($"IX_{outboxTable}_Published");
         });
 

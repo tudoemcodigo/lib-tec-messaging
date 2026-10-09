@@ -2,7 +2,7 @@
 
 Todas as mudanças relevantes do **TEC.Messaging** são registradas aqui. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto usa [Versionamento Semântico](https://semver.org/lang/pt-BR/). Enquanto a versão for `0.x`, mudanças incompatíveis podem ocorrer em versões MINOR. Os três pacotes saem sempre juntos, com a mesma versão.
 
-## [0.1.0] - não publicado
+## [0.1.0] - 2026-10-09
 
 Primeira versão, extraída e generalizada da mensageria do AuraTicket.
 
@@ -21,7 +21,7 @@ Primeira versão, extraída e generalizada da mensageria do AuraTicket.
 
 #### 🗄️ TEC.Messaging.SqlServer
 
-- `modelBuilder.AddTecMessaging(schema)`: tabelas `OutboxMessages` e `InboxMessages` com índices filtrados.
+- `modelBuilder.AddTecMessaging(schema)`: tabelas `OutboxMessages` e `InboxMessages` com índices filtrados; o índice das pendentes (`IX_<tabela>_Pending`, `OccurredAt, Id` com `NextAttemptAt` e `LeasedUntil` incluídos) segue a ordem da reserva, para reservas simultâneas não pularem mensagens livres.
 - `TecMessagingSaveChangesInterceptor`: eventos de domínio → Outbox no mesmo `SaveChanges`; eventos descartados só depois do commit; falha desfaz o que foi adicionado (sem duplicar na nova tentativa); `IDomainEventsSavingObserver` para dados próprios na mesma transação.
 - `SqlServerOutboxStore` (reserva com `UPDLOCK, READPAST, ROWLOCK` e `OUTPUT`, conclusão só com o token vigente), `SqlServerInboxStore`, `UseSqlServer<TContext>()` e `UseTecMessaging(sp)`.
 
@@ -30,3 +30,4 @@ Primeira versão, extraída e generalizada da mensageria do AuraTicket.
 - `UseRabbitMq(...)`: conexão com URI do TEC.Vault, publicador com publisher confirms e timeout, routing key derivada do tipo.
 - `RabbitMqConsumer` (prefetch, ack manual depois do handler, retry por filas de espera com TTL, DLQ, limite de entregas, pausa/retomada, correlação e trace), `QueueDefinition`, `ConsumeResult`, `AddConsumer<T>()`.
 - Administração da DLQ por AMQP, monitor da métrica das DLQs e health check `AddTecRabbitMq()`.
+- Resiliência da conexão: circuit breaker da criação da conexão (`RabbitMqOptions.CircuitBreaker`, `Polly.Core`, ligado por padrão) com `RabbitMqCircuitOpenException`, health check sem nova tentativa com o circuito aberto, reconexão do consumidor com espera exponencial e variação (`ReconnectDelay`, `MaxReconnectDelay`); métrica `tec.messaging.connection.circuit.state_changes` e eventos 4211 e 4401–4404.

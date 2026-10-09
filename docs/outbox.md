@@ -69,6 +69,10 @@ public sealed class VendasDbContext(DbContextOptions<VendasDbContext> options, T
 }
 ```
 
+Gere a migration depois de chamar `AddTecMessaging`. O índice das pendentes (`IX_OutboxMessages_Pending`, filtrado em
+`Status = 0`, chave `OccurredAt, Id` com `NextAttemptAt` e `LeasedUntil` incluídos) segue a ordem da reserva: várias
+instâncias reservam lotes ao mesmo tempo sem pular mensagens livres. Não troque a ordem das colunas dele.
+
 Evento sem agregado (ex.: configuração alterada):
 
 ```csharp

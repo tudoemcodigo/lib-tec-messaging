@@ -411,7 +411,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "TEC.Core": "[0.1.0-preview.1, )"
+          "TEC.Core": "[0.1.0, )"
         }
       },
       "tec.messaging.rabbitmq": {
@@ -420,6 +420,7 @@
           "Microsoft.Extensions.Configuration.Binder": "[10.0.12, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
+          "Polly.Core": "[8.8.0, )",
           "RabbitMQ.Client": "[7.2.1, )",
           "TEC.Messaging": "[0.1.0, )",
           "TEC.Vault": "[0.0.1, )"
@@ -605,6 +606,12 @@
           "Microsoft.Extensions.Primitives": "10.0.12"
         }
       },
+      "Polly.Core": {
+        "type": "CentralTransitive",
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
+      },
       "RabbitMQ.Client": {
         "type": "CentralTransitive",
         "requested": "[7.2.1, )",
@@ -616,9 +623,9 @@
       },
       "TEC.Core": {
         "type": "CentralTransitive",
-        "requested": "[0.1.0-preview.1, )",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "6CnmQdgqZJgvwY54bYlpsKOOzmqreaA/je3naZ9VmCohK0F97tTUYarxILuk0+mwz+21g1j7072ydM1Nx59uyA==",
+        "requested": "[0.1.0, )",
+        "resolved": "0.1.0",
+        "contentHash": "Sf2/in2LnBAyfbvVAZXN5K7I+PB9z0TgTOcMXb7+4XqUKVMw1ybwhveHtvK/pQJn9rBAlBhWm9CyI20JF2LqOg==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }

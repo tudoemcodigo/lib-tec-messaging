@@ -25,6 +25,7 @@
 | Contador + histograma | `tec.messaging.consumer.messages` / `tec.messaging.consumer.duration` | Tags `messaging.destination.name`, `tec.messaging.outcome` |
 | Gauge | `tec.messaging.outbox.pending` / `pending_with_errors` / `dead_messages` / `oldest_pending_age` | Atualizados pelo relay |
 | Gauge | `tec.messaging.dlq.messages` | Por fila, pelo monitor do RabbitMQ |
+| Contador | `tec.messaging.connection.circuit.state_changes` | Tags `messaging.system` (`rabbitmq`), `tec.messaging.circuit.state` (`open`, `half_open`, `closed`) |
 
 ActivitySource e Meter: `TEC.Messaging` (`MessagingDiagnostics.ActivitySourceName`/`MeterName`), assinados automaticamente pelo
 TEC.Observability.
@@ -46,7 +47,7 @@ app.Use(async (http, next) =>
 O consumidor abre o escopo sozinho (correlação do envelope e causa = `MessageId` recebido): mensagens gravadas no Outbox
 durante o processamento herdam os dois.
 
-Alertas sugeridos: `oldest_pending_age > 300 s`, `dead_messages > 0`, `dlq.messages > 0`.
+Alertas sugeridos: `oldest_pending_age > 300 s`, `dead_messages > 0`, `dlq.messages > 0`, `connection.circuit.state_changes{state="open"}` (broker inalcançável; logs 4401–4404, e 4211 por fila enquanto espera).
 
 ## ⚙️ Opções
 

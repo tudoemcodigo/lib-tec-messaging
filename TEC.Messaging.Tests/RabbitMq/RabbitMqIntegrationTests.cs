@@ -99,7 +99,35 @@ public class RabbitMqIntegrationTests
                 .AddConsumer<ProbeConsumer>();
             var host = builder.Build();
             await host.StartAsync();
+            // O consumidor declara fila e ligação em segundo plano: publicar antes disso descartaria a mensagem (mandatory=false)
+            await WaitForConsumerAsync(uri!, queue.Name);
             return new Broker(host, uri!, exchange, queue, probe);
+        }
+
+        /// <summary>Espera a fila ter consumidor (fila, ligação e QoS já declarados pelo consumidor).</summary>
+        private static async Task WaitForConsumerAsync(string uri, string queue)
+        {
+            var factory = new ConnectionFactory { Uri = new Uri(uri) };
+            await using var connection = await factory.CreateConnectionAsync();
+            var until = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (DateTime.UtcNow < until)
+            {
+                // Declaração passiva de fila inexistente fecha o canal: um canal por tentativa
+                await using var channel = await connection.CreateChannelAsync();
+                try
+                {
+                    if ((await channel.QueueDeclarePassiveAsync(queue)).ConsumerCount > 0)
+                        return;
+                }
+                catch (global::RabbitMQ.Client.Exceptions.OperationInterruptedException)
+                {
+                    // Fila ainda não declarada
+                }
+
+                await Task.Delay(50);
+            }
+
+            throw new TimeoutException($"Fila {queue} sem consumidor em 20 s.");
         }
 
         public Task PublishAsync(MessageEnvelope envelope) => Services.GetRequiredService<IMessagePublisher>().PublishAsync(envelope, CancellationToken.None);

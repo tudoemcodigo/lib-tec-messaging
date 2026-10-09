@@ -195,7 +195,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "TEC.Core": "[0.1.0-preview.1, )"
+          "TEC.Core": "[0.1.0, )"
         }
       },
       "Microsoft.Extensions.Configuration": {
@@ -292,9 +292,9 @@
       },
       "TEC.Core": {
         "type": "CentralTransitive",
-        "requested": "[0.1.0-preview.1, )",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "6CnmQdgqZJgvwY54bYlpsKOOzmqreaA/je3naZ9VmCohK0F97tTUYarxILuk0+mwz+21g1j7072ydM1Nx59uyA==",
+        "requested": "[0.1.0, )",
+        "resolved": "0.1.0",
+        "contentHash": "Sf2/in2LnBAyfbvVAZXN5K7I+PB9z0TgTOcMXb7+4XqUKVMw1ybwhveHtvK/pQJn9rBAlBhWm9CyI20JF2LqOg==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }
@@ -532,7 +532,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "TEC.Core": "[0.1.0-preview.1, )"
+          "TEC.Core": "[0.1.0, )"
         }
       },
       "Microsoft.Extensions.Configuration": {
@@ -631,9 +631,9 @@
       },
       "TEC.Core": {
         "type": "CentralTransitive",
-        "requested": "[0.1.0-preview.1, )",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "6CnmQdgqZJgvwY54bYlpsKOOzmqreaA/je3naZ9VmCohK0F97tTUYarxILuk0+mwz+21g1j7072ydM1Nx59uyA==",
+        "requested": "[0.1.0, )",
+        "resolved": "0.1.0",
+        "contentHash": "Sf2/in2LnBAyfbvVAZXN5K7I+PB9z0TgTOcMXb7+4XqUKVMw1ybwhveHtvK/pQJn9rBAlBhWm9CyI20JF2LqOg==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }
