@@ -1,0 +1,74 @@
+name: Performance
+
+# Suítes de carga: só sob demanda (Actions -> Performance -> Run workflow). Não rodam no PR nem na publicação.
+#   rapida     -> TEC.Messaging.LoadTests [Carga-CI]: relays concorrentes sobre o mesmo Outbox (em memória)
+#   pesados    -> TEC.Messaging.LoadTests [Carga-Pesada]: o mesmo com volume (TEC_CARGA_MENSAGENS)
+#   benchmarks -> TEC.Messaging.Benchmarks, só no disparo manual
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suítes de carga: pesadas (Carga-Pesada), rapida (Carga-CI) ou todas"
+        type: choice
+        options: [pesadas, rapida, todas]
+        default: pesadas
+      mensagens:
+        description: "Mensagens no Outbox na carga pesada"
+        type: number
+        default: 200000
+      benchmarks:
+        description: "Rodar também os benchmarks"
+        type: boolean
+        default: false
+      benchmark_filtro:
+        description: "Filtro do BenchmarkDotNet (* = todos)"
+        type: string
+        default: "*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rapida:
+    if: inputs.suite != 'pesadas'
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: carga rápida
+      tests: TEC.Messaging.LoadTests /*/*/*/*[Category=Carga-CI]
+      private-feed: true
+      artifact: carga
+
+  pesados:
+    if: inputs.suite != 'rapida'
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    with:
+      name: suítes pesadas
+      tests: TEC.Messaging.LoadTests /*/*/*/*[Category=Carga-Pesada]
+      private-feed: true
+      env: |
+        TEC_CARGA_MENSAGENS=${{ inputs.mensagens || 200000 }}
+      artifact: pesados
+      timeout-minutes: 60
+
+  benchmarks:
+    if: inputs.benchmarks
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-benchmark.yml@v1
+    permissions:
+      contents: read
+      packages: read
+    with:
+      project: TEC.Messaging.Benchmarks
+      private-feed: true
+      filter: ${{ inputs.benchmark_filtro }}

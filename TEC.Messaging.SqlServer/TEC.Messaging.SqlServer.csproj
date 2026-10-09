@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Configurações de build, segurança e metadados comuns: ..\Directory.Build.props -->
+
+  <PropertyGroup>
+    <RootNamespace>TEC.Messaging.SqlServer</RootNamespace>
+    <Description>Outbox e Inbox do TEC.Messaging no SQL Server com EF Core: eventos de domínio gravados na mesma transação do agregado, reserva de lotes sem disputa entre processos e administração das mensagens com falha.</Description>
+    <PackageTags>messaging;outbox;inbox;sqlserver;entityframework;domain-events;tec</PackageTags>
+    <!--
+      Native AOT: desligado de propósito. EF Core (modelo dinâmico, expressões compiladas) não é compatível com
+      trimming/AOT. Os demais analisadores de segurança continuam valendo como erro.
+    -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <!-- EF Core acompanha o runtime: 8.x no net8.0 e 10.x no net10.0 (ambos LTS), versão no Directory.Packages.props -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+  </ItemGroup>
+
+  <!--
+    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
+    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
+  -->
+  <ItemGroup>
+    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

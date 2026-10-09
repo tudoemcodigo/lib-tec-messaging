@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/TEC.Messaging.SampleWorker/TEC.Messaging.SampleWorker.csproj" />
+  </Folder>
+  <Project Path="TEC.Messaging.Benchmarks/TEC.Messaging.Benchmarks.csproj" />
+  <Project Path="TEC.Messaging.LoadTests/TEC.Messaging.LoadTests.csproj" />
+  <Project Path="TEC.Messaging.RabbitMQ/TEC.Messaging.RabbitMQ.csproj" />
+  <Project Path="TEC.Messaging.SqlServer/TEC.Messaging.SqlServer.csproj" />
+  <Project Path="TEC.Messaging.Tests/TEC.Messaging.Tests.csproj" />
+  <Project Path="TEC.Messaging/TEC.Messaging.csproj" />
+</Solution>
