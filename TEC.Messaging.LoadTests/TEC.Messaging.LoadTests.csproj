@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Concorrência e vazão do relay do Outbox (armazenamento e publicador em memória, sem broker): vários relays sobre o
+    mesmo Outbox publicam cada mensagem uma única vez. Categorias (TestCategories): Carga-CI (rápidos, performance.yml
+    suíte rápida) e Carga-Pesada (volume maior, suíte pesada). Parâmetros em TEC_CARGA_* e relatórios .md em
+    TEC_CARGA_RELATORIOS.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>TEC.Messaging.LoadTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../TEC.Messaging.Tests/Shared/TestSupport.cs" Link="Infrastructure/TestSupport.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

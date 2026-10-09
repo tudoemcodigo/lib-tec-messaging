@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Configurações de build, segurança e metadados comuns: ..\Directory.Build.props -->
+
+  <PropertyGroup>
+    <RootNamespace>TEC.Messaging</RootNamespace>
+    <Description>Mensageria confiável entre serviços: Outbox transacional com publicação fora da transação, consumidor idempotente (Inbox), contratos de integração versionados, correlação ponta a ponta e métricas, independente do broker.</Description>
+    <PackageTags>messaging;outbox;inbox;integration-events;domain-events;idempotency;opentelemetry;tec</PackageTags>
+  </PropertyGroup>
+
+  <!-- Núcleo sem broker nem banco: só abstrações do Microsoft.Extensions e o TEC.Core (Result, IDomainEvent, JSON) -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TecReference Include="TEC.Core" />
+  </ItemGroup>
+
+  <!-- Satélites da mesma família (mesma versão em toda publicação): usam os internos do núcleo (telemetria, GuidV7) -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="TEC.Messaging.SqlServer" />
+    <InternalsVisibleTo Include="TEC.Messaging.RabbitMQ" />
+  </ItemGroup>
+
+</Project>

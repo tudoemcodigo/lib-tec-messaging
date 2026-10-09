@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unitários (sem categoria: armazenamento e publicador em memória, EF Core InMemory para o interceptor) e de integração
+    (categoria Integracao) com SQL Server e RabbitMQ reais. Conexões em TEC_TESTES_MESSAGING_SQL_CONEXAO e
+    TEC_TESTES_MESSAGING_RABBITMQ_URI (variável, user-secrets ou appsettings.Local.json); sem elas, os testes de integração
+    se pulam com o motivo. Seleção sempre por categoria (TestCategories).
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>TEC.Messaging.Tests</RootNamespace>
+    <!-- Mesmo id em todos os projetos de teste dos componentes TEC: um único "dotnet user-secrets set" vale para todos -->
+    <UserSecretsId>tudoemcodigo-tec-testes</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging.SqlServer\TEC.Messaging.SqlServer.csproj" />
+    <ProjectReference Include="..\TEC.Messaging.RabbitMQ\TEC.Messaging.RabbitMQ.csproj" />
+    <TecReference Include="TEC.Vault.InMemory" />
+  </ItemGroup>
+
+  <!-- Configuração local dos testes de integração (seção TecTestes; arquivo ignorado pelo git, copiado para a saída) -->
+  <ItemGroup>
+    <None Include="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('appsettings.Local.json')" />
+  </ItemGroup>
+
+</Project>

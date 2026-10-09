@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Configurações de build, segurança e metadados comuns: ..\Directory.Build.props -->
+
+  <PropertyGroup>
+    <RootNamespace>TEC.Messaging.RabbitMQ</RootNamespace>
+    <Description>Transporte RabbitMQ do TEC.Messaging: publicação com confirmação do broker, consumidores com nova tentativa escalonada, fila de mensagens mortas e pausa, conexão lida do cofre de segredos e trace ponta a ponta.</Description>
+    <PackageTags>messaging;rabbitmq;amqp;retry;dead-letter;vault;opentelemetry;tec</PackageTags>
+    <!-- Bind das opções sem reflexão (compatível com Native AOT) -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="RabbitMQ.Client" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+
+  <!--
+    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
+    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
+  -->
+  <ItemGroup>
+    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
+  </ItemGroup>
+
+  <!-- Conexão: URI AMQP lida de um segredo do TEC.Vault, nunca da configuração -->
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />
+    <TecReference Include="TEC.Vault" />
+  </ItemGroup>
+
+</Project>
