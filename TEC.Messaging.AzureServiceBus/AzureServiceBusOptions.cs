@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using TEC.Messaging.Transport;
 
 namespace TEC.Messaging.AzureServiceBus;
 
@@ -19,6 +20,22 @@ public sealed class AzureServiceBusOptions
 
     /// <summary>Tempo limite para a confirmação de publicação. Padrão 10 s.</summary>
     public TimeSpan PublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
+}
+
+/// <summary>
+/// Publicação no Azure Service Bus impossível por indisponibilidade do transporte.
+/// O Outbox devolve as mensagens sem contar tentativa (<see cref="ITransportUnavailableException"/>).
+/// </summary>
+public sealed class AzureServiceBusUnavailableException : Exception, ITransportUnavailableException
+{
+    /// <summary>Cria uma nova instância de <see cref="AzureServiceBusUnavailableException"/>.</summary>
+    public AzureServiceBusUnavailableException() : base("Azure Service Bus indisponível.") { }
+
+    /// <summary>Cria uma nova instância com mensagem descritiva.</summary>
+    public AzureServiceBusUnavailableException(string message) : base(message) { }
+
+    /// <summary>Cria uma nova instância com mensagem e causa interna.</summary>
+    public AzureServiceBusUnavailableException(string message, Exception innerException) : base(message, innerException) { }
 }
 
 internal sealed class AzureServiceBusOptionsValidator : IValidateOptions<AzureServiceBusOptions>

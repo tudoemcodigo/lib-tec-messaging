@@ -22,6 +22,8 @@ internal static partial class SensitiveDataSanitizer
         result = CpfPattern().Replace(result, Redacted);
         result = CnpjPattern().Replace(result, Redacted);
         result = CvvPattern().Replace(result, $"$1:{Redacted}");
+        result = EmailPattern().Replace(result, Redacted);
+        result = PhonePattern().Replace(result, Redacted);
         return result;
     }
 
@@ -34,7 +36,7 @@ internal static partial class SensitiveDataSanitizer
     [GeneratedRegex(@"(?i)\b(pwd|password|user id|uid|secret|accountkey|sharedaccesskey)\s*=\s*[^;]+", RegexOptions.Compiled)]
     private static partial Regex ConnectionStringSecretPattern();
 
-    [GeneratedRegex(@"\b(?:\d{4}[ -]?){3}\d{4}\b", RegexOptions.Compiled)]
+    [GeneratedRegex(@"\b(?:\d[ -]?){13,19}\b", RegexOptions.Compiled)]
     private static partial Regex CreditCardPattern();
 
     [GeneratedRegex(@"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", RegexOptions.Compiled)]
@@ -45,4 +47,10 @@ internal static partial class SensitiveDataSanitizer
 
     [GeneratedRegex(@"(?i)\b(cvv|cvc)[:=\s]+[0-9]{3,4}\b", RegexOptions.Compiled)]
     private static partial Regex CvvPattern();
+
+    [GeneratedRegex(@"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", RegexOptions.Compiled)]
+    private static partial Regex EmailPattern();
+
+    [GeneratedRegex(@"(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\d{4}|\d{4})[ -]?\d{4}\b", RegexOptions.Compiled)]
+    private static partial Regex PhonePattern();
 }

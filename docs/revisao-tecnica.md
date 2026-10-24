@@ -1,9 +1,12 @@
-[🏠 TEC.Messaging](../README.md) › [📚 Documentação](README.md) › Revisão técnica
+[🏠 TEC.Messaging](../README.md) › [📚 Documentação](README.md) › 🔍 Revisão técnica
 
 # 🔍 Revisão técnica
 
 > Análise de segurança, bugs, implementação, organização e aderência da documentação dos pacotes `TEC.Messaging`,
 > `TEC.Messaging.SqlServer` e `TEC.Messaging.RabbitMQ`.
+
+> [!NOTE]
+> Este documento é um **instantâneo datado** (2026-10-19): números de linha, versões (`0.1.0`/`0.2.0`, antes de a primeira publicação oficial ser numerada `0.0.1`) e contagens de testes descrevem aquele momento e não são atualizados. Os pacotes `PostgreSql`, `AzureServiceBus` e `Aws` não estavam no escopo; a seção [Complemento da revisão documental](#-complemento-da-revisão-documental--2026-10-24) registra o que a conferência da documentação contra o código encontrou neles.
 
 ## 📑 Sumário
 
@@ -18,6 +21,7 @@
 - [🚀 Melhorias sugeridas](#-melhorias-sugeridas)
 - [📝 Ajustes na documentação](#-ajustes-na-documentação)
 - [🔧 Correções aplicadas — 2026-10-19](#-correções-aplicadas--2026-10-19)
+- [🔎 Complemento da revisão documental — 2026-10-24](#-complemento-da-revisão-documental--2026-10-24)
 
 ---
 
@@ -500,4 +504,24 @@ Documentação atualizada: `outbox.md`, `rabbitmq.md`, `seguranca.md`, `telemetr
 - M4: requeue sem limite: com a dependência fora para sempre, a mensagem circula a cada `RetryDelays[0]` sem ir à DLQ.
 
 ---
-⬅️ [Desenvolvimento](desenvolvimento.md) · [📚 Índice](README.md)
+
+## 🔎 Complemento da revisão documental — 2026-10-24
+
+Conferência de toda a documentação contra o código atual (`0.0.1`), que cobriu também `TEC.Messaging.PostgreSql`, `TEC.Messaging.AzureServiceBus` e `TEC.Messaging.Aws`. A documentação foi corrigida para refletir o código; **o código não foi alterado**. Os itens abaixo são **suspeitas** lidas no código, ainda não reproduzidas por teste: confirme antes de corrigir.
+
+| ID | Severidade sugerida | Local | Suspeita |
+|---|---|---|---|
+| C1 | Alta | `TEC.Messaging.PostgreSql/DependencyInjection/MessagingBuilderPostgreSqlExtensions.cs:33` · `Interception/TecMessagingPostgreSqlSaveChangesInterceptor.cs:33` | `UsePostgreSql<TContext>()` registra o interceptor com `TryAddSingleton<T>()`, mas o construtor é `internal` (recebe `IntegrationEnvelopeFactory`, observadores, `MessagingMetrics` e `TimeProvider`). O container só usa construtores públicos: `UseTecMessagingPostgreSql(sp)` deve falhar ao resolver o interceptor. O SQL Server usa uma fábrica (`sp => new ...`). Não há teste que resolva o registro do PostgreSQL. Também faltam a extensão de registro do observador (`IPostgreSqlDomainEventsSavingObserver`) e testes de integração |
+| C2 | Média | `PostgreSqlOutboxStore.cs:34,40` · `RequeueAsync` | A reserva grava `LeasedUntil` com `NOW() AT TIME ZONE 'UTC'` (um `timestamp` sem fuso) numa coluna `timestamptz`, e o `RequeueAsync` compara `LeasedUntil` com `DateTimeOffset.UtcNow` (traduzido pelo provedor). Se a sessão do banco não estiver em UTC, o `timestamp` é interpretado no fuso da sessão: a validade gravada fica deslocada em relação a `timestamptz` reais (e entre sessões com fusos diferentes). Verificar o fuso das sessões do Npgsql ou usar `clock_timestamp()`/`now()` direto em `timestamptz` |
+| C3 | Média | `AwsMessagingPublisher.cs:22` · `AzureServiceBusPublisher.cs:27` | Com `Enabled = false` (ou nuvem fora do ar) a publicação lança exceções que **não** implementam `ITransportUnavailableException`; o relay conta tentativa e leva as mensagens a `Dead` (a correção A1 só cobriu o RabbitMQ) |
+| C4 | Média | `AwsSqsConsumer.cs:60` · `AzureServiceBusConsumer.cs:59` | `GetSqsAsync`/`GetClientAsync` ficam **fora** do `try` do laço: segredo ausente ou credencial inválida lança do `ExecuteAsync` e, com o comportamento padrão do host, derruba a aplicação. O consumidor do RabbitMQ reabre com espera exponencial |
+| C5 | Baixa | `AwsSqsConsumer.cs` · `AzureServiceBusConsumer.cs` | Exceções do handler viram `Retry` sem nenhum log; os consumidores não registram `consumer.messages`/`consumer.duration`, não aplicam `MaxPayloadLength` nem validam o envelope recebido (`Validate`); os consumidores ignoram `Enabled` |
+| C6 | Baixa | `AwsSqsConsumer.cs:132` · `AzureServiceBusConsumer.cs:110` | `OccurredAt` do envelope recebido é a hora do recebimento (AWS) ou o `EnqueuedTime` (Azure), não o `occurredAt` publicado no atributo/propriedade |
+| C7 | Baixa | `AwsMessagingPublisher.cs:25-27` · `AwsMessagingOptions.cs` | `DefaultDestination` vazio faz o destino ser o `Type` do contrato, que não é ARN nem URL de fila: a publicação falha. Não há validação na subida |
+| C8 | Baixa | `AwsSqsConsumer.cs:156-166` | `Reject` e `Requeue` usam o mesmo `ChangeMessageVisibility(0)`: sem `RedrivePolicy` na fila a mensagem rejeitada reaparece sem parar, e com `Requeue` o retorno é imediato (laço) |
+| C9 | Info | `TEC.Messaging.Aws.csproj:19` · `TEC.Messaging.AzureServiceBus.csproj:18` | `Polly.Core` é referenciado mas não é usado no código dos dois satélites |
+
+Também observado e já corrigido na documentação (não é defeito do código): nomes e padrões de API divergentes em `docs/aws.md` e `docs/azureservicebus.md` (`UseAwsMessaging`, `AddConsumer`, `AddTecAwsMessaging`, `CredentialsSecretName`, `MaxConcurrency`, `AwsSqsQueueDefinition`, `TopicOrQueuePrefix`, `AzureServiceBusSubscription` não existem), `docs/postgresql.md` (a extensão que liga o interceptor é `UseTecMessagingPostgreSql`; o SQL de reserva e os nomes dos índices estavam diferentes do código) e o texto de mascaramento do sanitizador (`***REDACTED***`, não `[REDACTED]`).
+
+---
+⬅️ [🛠️ Desenvolvimento](desenvolvimento.md) · [📚 Índice](README.md) · [🏛️ ADRs](adr/README.md) ➡️

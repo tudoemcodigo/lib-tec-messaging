@@ -24,7 +24,7 @@ internal sealed class AzureServiceBusPublisher(
 
         var settings = options.Value;
         if (!settings.Enabled)
-            throw new InvalidOperationException("Transporte Azure Service Bus desabilitado.");
+            throw new AzureServiceBusUnavailableException("Transporte Azure Service Bus desabilitado.");
 
         var destination = !string.IsNullOrWhiteSpace(settings.DefaultTopic) ? settings.DefaultTopic : envelope.Type;
         using var activity = MessagingDiagnostics.StartPublish(envelope, "azure-servicebus", destination);
@@ -49,11 +49,26 @@ internal sealed class AzureServiceBusPublisher(
         if (sentEnvelope.TraceParent is not null)
             message.ApplicationProperties["traceparent"] = sentEnvelope.TraceParent;
 
-        var sender = await GetSenderAsync(destination, cancellationToken).ConfigureAwait(false);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(settings.PublishTimeout);
+        try
+        {
+            var sender = await GetSenderAsync(destination, cancellationToken).ConfigureAwait(false);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(settings.PublishTimeout);
 
-        await sender.SendMessageAsync(message, timeout.Token).ConfigureAwait(false);
+            await sender.SendMessageAsync(message, timeout.Token).ConfigureAwait(false);
+        }
+        catch (ServiceBusException ex)
+        {
+            throw new AzureServiceBusUnavailableException($"Falha no Azure Service Bus ({ex.Reason}): {ex.Message}", ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new AzureServiceBusUnavailableException("Timeout aguardando confirmação do Azure Service Bus.", ex);
+        }
+        catch (Exception ex) when (ex is not (OperationCanceledException or AzureServiceBusUnavailableException))
+        {
+            throw new AzureServiceBusUnavailableException($"Falha ao publicar no Azure Service Bus: {ex.Message}", ex);
+        }
     }
 
     private async Task<ServiceBusSender> GetSenderAsync(string destination, CancellationToken ct)

@@ -31,13 +31,13 @@ internal sealed class PostgreSqlOutboxStore<TContext>(TContext db, TimeProvider 
             WITH batch AS (
                 SELECT {n["Id"]} FROM {n.Table}
                 WHERE {n["Status"]} = 0 AND {n["NextAttemptAt"]} <= @now
-                    AND ({n["LeasedUntil"]} IS NULL OR {n["LeasedUntil"]} < (NOW() AT TIME ZONE 'UTC'))
+                    AND ({n["LeasedUntil"]} IS NULL OR {n["LeasedUntil"]} < NOW())
                 ORDER BY {n["OccurredAt"]}, {n["Id"]}
                 LIMIT @batchSize
                 FOR UPDATE SKIP LOCKED)
             UPDATE {n.Table} AS target
             SET {n["LeaseToken"]} = @token,
-                {n["LeasedUntil"]} = (NOW() AT TIME ZONE 'UTC') + (@leaseSeconds * interval '1 second')
+                {n["LeasedUntil"]} = NOW() + (@leaseSeconds * interval '1 second')
             FROM batch
             WHERE target.{n["Id"]} = batch.{n["Id"]}
             RETURNING target.*;
@@ -173,7 +173,7 @@ internal sealed class PostgreSqlOutboxStore<TContext>(TContext db, TimeProvider 
         var now = time.GetUtcNow();
         var target = db.Set<OutboxMessage>()
             .Where(m => m.Status == OutboxMessageStatus.Dead
-                || (m.Status == OutboxMessageStatus.Pending && m.Attempts > 0 && (m.LeasedUntil == null || m.LeasedUntil < DateTimeOffset.UtcNow)));
+                || (m.Status == OutboxMessageStatus.Pending && m.Attempts > 0 && (m.LeasedUntil == null || m.LeasedUntil < now)));
         if (ids is not null)
         {
             var list = ids.ToList();

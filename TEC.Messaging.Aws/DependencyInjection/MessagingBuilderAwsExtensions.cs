@@ -48,6 +48,16 @@ public static class MessagingBuilderAwsExtensions
         return builder;
     }
 
+    /// <summary>Alias para <see cref="UseAws"/>.</summary>
+    public static MessagingBuilder UseAwsMessaging(
+        this MessagingBuilder builder, Action<AwsMessagingOptions>? configure = null, IConfiguration? configuration = null)
+        => builder.UseAws(configure, configuration);
+
+    /// <summary>Alias para <see cref="AddAwsSqsConsumer{TConsumer}"/>.</summary>
+    public static MessagingBuilder AddConsumer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TConsumer>(this MessagingBuilder builder)
+        where TConsumer : AwsSqsConsumer
+        => builder.AddAwsSqsConsumer<TConsumer>();
+
     /// <summary>
     /// Registra um consumidor AWS SQS no container como serviço hospedado.
     /// </summary>
@@ -72,6 +82,11 @@ public static class MessagingBuilderAwsExtensions
         ArgumentNullException.ThrowIfNull(builder);
         return builder.AddCheck<AwsMessagingHealthCheck>(name, HealthStatus.Unhealthy, tags ?? ["ready"]);
     }
+
+    /// <summary>Alias para <see cref="AddTecAws"/>.</summary>
+    public static IHealthChecksBuilder AddTecAwsMessaging(
+        this IHealthChecksBuilder builder, string name = "aws-messaging", IEnumerable<string>? tags = null)
+        => builder.AddTecAws(name, tags);
 }
 
 internal sealed class AwsMessagingHealthCheck(AwsClientFactory factory, IOptions<AwsMessagingOptions> options) : IHealthCheck

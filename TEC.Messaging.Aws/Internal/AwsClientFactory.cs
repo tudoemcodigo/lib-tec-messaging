@@ -77,14 +77,23 @@ internal sealed class AwsClientFactory(ISecretReader vault, IOptions<AwsMessagin
                 var parts = raw.Split(':', 2);
                 credentials = new BasicAWSCredentials(parts[0], parts[1]);
             }
-            else
+            else if (settings.UseAmbientCredentials)
             {
                 credentials = FallbackCredentialsFactory.GetCredentials();
             }
+            else
+            {
+                throw new InvalidOperationException($"O segredo '{settings.ConnectionSecretName}' do cofre não está no formato esperado 'accessKey:secretKey'. Para usar credenciais do ambiente, configure UseAmbientCredentials = true.");
+            }
+        }
+        else if (settings.UseAmbientCredentials)
+        {
+            credentials = FallbackCredentialsFactory.GetCredentials();
         }
         else
         {
-            credentials = FallbackCredentialsFactory.GetCredentials();
+            var err = secret.IsFailure && secret.Error is not null ? secret.Error.Message : "vazio";
+            throw new InvalidOperationException($"Não foi possível obter o segredo de credenciais '{settings.ConnectionSecretName}' no cofre ({err}). Para usar credenciais do ambiente, configure UseAmbientCredentials = true.");
         }
 
         var sqsConfig = new AmazonSQSConfig { RegionEndpoint = region };

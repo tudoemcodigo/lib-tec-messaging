@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Hosting;
@@ -38,6 +40,7 @@ public abstract class AwsSqsConsumer : BackgroundService
 {
     private readonly AwsSqsConsumerDependencies _deps;
     private readonly ILogger _logger;
+    private readonly ConcurrentDictionary<Task, bool> _runningTasks = new();
     private SemaphoreSlim? _semaphore;
 
     /// <summary>Cria o consumidor AWS SQS.</summary>
@@ -82,7 +85,8 @@ public abstract class AwsSqsConsumer : BackgroundService
                 foreach (var msg in response.Messages)
                 {
                     await _semaphore.WaitAsync(stoppingToken).ConfigureAwait(false);
-                    _ = Task.Run(async () =>
+                    Task task = null!;
+                    task = Task.Run(async () =>
                     {
                         try
                         {
@@ -90,9 +94,11 @@ public abstract class AwsSqsConsumer : BackgroundService
                         }
                         finally
                         {
+                            _runningTasks.TryRemove(task, out _);
                             _semaphore.Release();
                         }
                     }, CancellationToken.None);
+                    _runningTasks.TryAdd(task, true);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -101,7 +107,8 @@ public abstract class AwsSqsConsumer : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro no loop de consumo do AWS SQS na fila {QueueUrl}", def.QueueUrl);
+                var safeMsg = SensitiveDataSanitizer.Sanitize(ex.Message);
+                _logger.LogError("Erro no loop de consumo do AWS SQS na fila {QueueUrl}: {Error}", def.QueueUrl, safeMsg);
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken).ConfigureAwait(false);
@@ -112,11 +119,30 @@ public abstract class AwsSqsConsumer : BackgroundService
                 }
             }
         }
+
+        if (!_runningTasks.IsEmpty)
+        {
+            try
+            {
+                await Task.WhenAll(_runningTasks.Keys).WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Encerramento ordenado
+            }
+        }
     }
 
     private async Task ProcessSqsMessageAsync(IAmazonSQS sqs, string queueUrl, Message raw, CancellationToken ct)
     {
-        _ = Guid.TryParse(raw.MessageAttributes.TryGetValue("messageId", out var idAttr) ? idAttr.StringValue : raw.MessageId, out var messageId);
+        if (ct.IsCancellationRequested)
+            return;
+
+        var rawId = raw.MessageAttributes.TryGetValue("messageId", out var idAttr) ? idAttr.StringValue : raw.MessageId;
+        var messageId = Guid.TryParse(rawId, out var parsedId) && parsedId != Guid.Empty
+            ? parsedId
+            : DeterministicGuid.Create(rawId);
+
         var type = raw.MessageAttributes.TryGetValue("type", out var tAttr) ? tAttr.StringValue : "unknown";
         var version = raw.MessageAttributes.TryGetValue("version", out var vAttr) && int.TryParse(vAttr.StringValue, out var v) ? v : 1;
         var traceParent = raw.MessageAttributes.TryGetValue("traceparent", out var tpAttr) ? tpAttr.StringValue : null;
@@ -125,11 +151,17 @@ public abstract class AwsSqsConsumer : BackgroundService
 
         var failures = raw.Attributes.TryGetValue("ApproximateReceiveCount", out var rc) && int.TryParse(rc, out var count) ? Math.Max(0, count - 1) : 0;
 
+        var occurredAt = raw.MessageAttributes.TryGetValue("occurredAt", out var oaAttr) && DateTimeOffset.TryParse(oaAttr.StringValue, out var parsedOa)
+            ? parsedOa
+            : (raw.Attributes.TryGetValue("ApproximateFirstReceiveTimestamp", out var ts) && long.TryParse(ts, out var ms)
+                ? DateTimeOffset.FromUnixTimeMilliseconds(ms)
+                : DateTimeOffset.UtcNow);
+
         var envelope = new MessageEnvelope(
-            messageId == Guid.Empty ? Guid.NewGuid() : messageId,
+            messageId,
             type,
             version,
-            DateTimeOffset.UtcNow,
+            occurredAt,
             correlationId,
             causationId,
             traceParent,
@@ -148,14 +180,19 @@ public abstract class AwsSqsConsumer : BackgroundService
             result = ConsumeResult.Retry(SensitiveDataSanitizer.Sanitize($"{ex.GetType().Name}: {ex.Message}"));
         }
 
+        if (result.Action is ConsumeAction.Reject or ConsumeAction.Retry)
+        {
+            var sanitizedReason = SensitiveDataSanitizer.Sanitize(result.Reason ?? string.Empty);
+            if (!string.IsNullOrEmpty(sanitizedReason))
+                activity?.SetStatus(ActivityStatusCode.Error, sanitizedReason);
+        }
+
         switch (result.Action)
         {
             case ConsumeAction.Complete:
                 await sqs.DeleteMessageAsync(queueUrl, raw.ReceiptHandle, CancellationToken.None).ConfigureAwait(false);
                 break;
             case ConsumeAction.Reject:
-                // Em SQS, rejeitar é deixar a mensagem atingir o maxReceiveCount para a RedrivePolicy (DLQ)
-                // ou zerar a visibilidade para retry rápido
                 await sqs.ChangeMessageVisibilityAsync(queueUrl, raw.ReceiptHandle, 0, CancellationToken.None).ConfigureAwait(false);
                 break;
             case ConsumeAction.Requeue:
@@ -163,7 +200,8 @@ public abstract class AwsSqsConsumer : BackgroundService
                 break;
             case ConsumeAction.Retry:
             default:
-                // Mantém a visibilidade padrão para que o SQS reentregue após o VisibilityTimeout
+                var delaySeconds = Math.Clamp((int)Math.Pow(2, Math.Min(failures + 1, 8)), 1, 300);
+                await sqs.ChangeMessageVisibilityAsync(queueUrl, raw.ReceiptHandle, delaySeconds, CancellationToken.None).ConfigureAwait(false);
                 break;
         }
     }

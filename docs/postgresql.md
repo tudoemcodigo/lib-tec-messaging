@@ -1,49 +1,65 @@
-[🏠 TEC.Messaging](../README.md) › [📚 Documentação](README.md) › PostgreSQL
+[🏠 TEC.Messaging](../README.md) › [📚 Documentação](README.md) › 🐘 PostgreSQL
 
 # 🐘 PostgreSQL
 
-> Persistência transacional do Outbox e Inbox no PostgreSQL com EF Core e Npgsql.
+> Persistência transacional do Outbox e do Inbox no PostgreSQL com EF Core e Npgsql: reserva de lotes com `FOR UPDATE SKIP LOCKED` e conclusão sem contenção entre processos.
 
 ## 📑 Sumário
 
 - [🎯 Visão geral](#-visão-geral)
 - [🚀 Uso](#-uso)
-- [⚙️ Configuração](#️-configuração)
-- [🔒 Concorrência e Locks](#-concorrência-e-locks)
+- [🗄️ Esquema e índices](#️-esquema-e-índices)
+- [🔒 Concorrência e locks](#-concorrência-e-locks)
+- [⚙️ Opções](#️-opções)
 - [❌ Erros](#-erros)
+- [🛡️ Segurança](#️-segurança)
 - [❓ Perguntas frequentes](#-perguntas-frequentes)
 
 ---
 
 ## 🎯 Visão geral
 
-O pacote `TEC.Messaging.PostgreSql` implementa os componentes `IOutboxStore` e `IInboxStore` aproveitando recursos nativos de alto desempenho do PostgreSQL:
+O pacote `TEC.Messaging.PostgreSql` implementa as mesmas abstrações do [🗄️ SQL Server](sqlserver.md) (`IOutboxStore`, `IOutboxAdministration`, `IOutbox`, `IInboxStore`) sobre o `DbContext` da aplicação, com os recursos do PostgreSQL:
 
-| Recurso | Utilização |
+| Recurso do PostgreSQL | Utilização |
 |---|---|
-| `SELECT ... FOR UPDATE SKIP LOCKED` | Reserva de lotes sem contenção nem bloqueio entre múltiplos relays concorrentes |
-| `RETURNING target.*` | Conclusão atômica de lotes de mensagens em uma única viagem ao servidor |
-| Índices parciais (filtrados) | `IX_outbox_messages_pending` e `IX_outbox_messages_dead` com filtros em `status = 0` e `status = 2` |
-| `PostgresErrorCodes.UniqueViolation` (`23505`) | Detecção determinística de corridas no Inbox na constraint da chave primária |
+| `SELECT ... FOR UPDATE SKIP LOCKED` | Reserva de lotes sem contenção nem espera entre relays concorrentes |
+| `UPDATE ... FROM batch ... RETURNING target.*` | Reserva e leitura do lote em uma única viagem ao servidor |
+| `NOW() AT TIME ZONE 'UTC'` | Validade da reserva pelo relógio do banco |
+| Índices parciais (`WHERE "Status" = 0`, `1`, `2`) | Reserva, limpeza, estatísticas e listagem de falhas sem varrer as publicadas retidas |
+| `PostgresErrorCodes.UniqueViolation` (`23505`) | Detecção da corrida do Inbox pela chave primária |
+
+| Peça | Implementa |
+|---|---|
+| `PostgreSqlOutboxStore<TContext>` | `IOutboxStore` · `IOutboxAdministration` |
+| `PostgreSqlOutbox<TContext>` | `IOutbox` |
+| `PostgreSqlInboxStore<TContext>` | `IInboxStore` |
+| `TecMessagingPostgreSqlSaveChangesInterceptor` | Converte eventos de domínio em linhas do Outbox no `SaveChanges` |
+| `IPostgreSqlDomainEventsSavingObserver` | Gancho para gravar dados próprios na mesma transação |
+
+O pacote não é compatível com Native AOT (`IsAotCompatible=false`). Segue o EF Core e o Npgsql EF Core 8.x no `net8.0` e o 10.x no `net10.0`.
 
 ---
 
 ## 🚀 Uso
 
-### 1. Registro dos Serviços
+### 1. Registro dos serviços
 
 ```csharp
 services.AddTecMessaging()
     .AddEventType<PedidoAprovadoV1>()
     .Map<PedidoAprovado>(e => new PedidoAprovadoV1(e.PedidoId, e.Total))
     .UsePostgreSql<VendasDbContext>()
-    .AddOutboxRelay();
+    .AddOutboxRelay()
+    .AddInboxCleanup();                                   // se a aplicação consome mensagens
 
-services.AddDbContext<VendasDbContext>((sp, o) => 
-    o.UseNpgsql(conexao).UseTecMessaging(sp));
+services.AddDbContext<VendasDbContext>((sp, o) =>
+    o.UseNpgsql(conexao).UseTecMessagingPostgreSql(sp));
 ```
 
-### 2. Configuração no DbContext
+`UsePostgreSql<TContext>()` registra, com `TryAdd`: `IOutboxStore`, `IOutboxAdministration`, `IOutbox` e `IInboxStore` como **scoped** e o `TecMessagingPostgreSqlSaveChangesInterceptor` como singleton. Diferente do SQL Server, o nome da extensão que liga o interceptor ao contexto é `UseTecMessagingPostgreSql(sp)`.
+
+### 2. Modelo e migration
 
 ```csharp
 public sealed class VendasDbContext(DbContextOptions<VendasDbContext> options) : DbContext(options)
@@ -51,48 +67,142 @@ public sealed class VendasDbContext(DbContextOptions<VendasDbContext> options) :
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddTecMessagingPostgreSql("vendas"); // schema opcional
+        modelBuilder.AddTecMessagingPostgreSql("vendas");     // schema opcional; tabelas outbox_messages e inbox_messages
     }
 }
 ```
 
----
+Gere a migration depois (`dotnet ef migrations add Mensageria`). Para nomes próprios: `AddTecMessagingPostgreSql(schema, outboxTable, inboxTable)`.
 
-## 🔒 Concorrência e Locks
-
-A reserva de mensagens do Outbox utiliza a cláusula moderna de controle de concorrência pessimista:
-
-```sql
-SELECT "Id", "OccurredAt", "Type", "Version", "Payload", "Attempts"
-FROM "vendas"."outbox_messages"
-WHERE "Status" = 0 AND ("NextAttemptAt" IS NULL OR "NextAttemptAt" <= clock_timestamp())
-ORDER BY "OccurredAt", "Id"
-LIMIT 50
-FOR UPDATE SKIP LOCKED;
-```
-
-Com o `SKIP LOCKED`, caso outro relay esteja processando um lote de mensagens, o PostgreSQL simplesmente pula as linhas bloqueadas e entrega as próximas disponíveis sem enfileirar transações nem causar deadlocks.
-
----
-
-## ⚙️ Configuração
-
-O registro via `UsePostgreSql<TContext>()` adiciona os stores e o interceptor `TecMessagingPostgreSqlSaveChangesInterceptor`.
-Para limpeza de Inbox:
+### 3. Limpeza do Inbox, evento sem agregado e Inbox
 
 ```csharp
-services.AddInboxCleanup(o => o.Retention = TimeSpan.FromDays(30));
+services.AddTecMessaging().UsePostgreSql<FinanceiroDbContext>().AddInboxCleanup(o => o.Retention = TimeSpan.FromDays(30));
+
+outbox.Enqueue(new ParametrosAlteradosV1(chave));       // IOutbox: gravado no próximo SaveChanges
+
+if (!await inbox.TryBeginAsync(message.Envelope.MessageId, "faturamento", ct))
+    return ConsumeResult.Completed;
+db.Faturas.Add(fatura);
+try { await db.SaveChangesAsync(ct); }
+catch (DbUpdateException ex) when (inbox.IsDuplicate(ex)) { return ConsumeResult.Completed; }
 ```
+
+Os fluxos estão em [📤 Outbox](outbox.md) e [📥 Inbox](inbox.md).
+
+> [!WARNING]
+> O pacote do PostgreSQL não tem a extensão `AddDomainEventsObserver` do SQL Server, e a suíte de testes só cobre o mapeamento do modelo (`PostgreSqlUnitTests`): não há teste que resolva `UsePostgreSql<TContext>()` pelo container nem integração com um PostgreSQL real. Valide o registro do interceptor na sua aplicação antes de produção (ver [🔍 Revisão técnica](revisao-tecnica.md#-complemento-da-revisão-documental--2026-10-24)).
+
+---
+
+## 🗄️ Esquema e índices
+
+`AddTecMessagingPostgreSql` mapeia `OutboxMessage` e `InboxMessage` (`TEC.Messaging.PostgreSql.Entities`). Os nomes de coluna são os das propriedades (`"Id"`, `"OccurredAt"`...), a menos que o modelo aplique uma convenção de nomes.
+
+**`outbox_messages`**:
+
+| Coluna | Tipo | Observação |
+|---|---|---|
+| `Id` | `uuid` | Chave primária (o `MessageId`, UUIDv7) |
+| `Type` | `varchar(200)` | Contrato |
+| `Version` | `integer` | Versão do contrato |
+| `OccurredAt` | `timestamptz` | Quando o fato ocorreu |
+| `CorrelationId` · `CausationId` · `TraceParent` | `varchar(128)` | Anuláveis |
+| `Payload` | `text` | JSON do evento |
+| `Status` | `smallint` | `0` Pending · `1` Published · `2` Dead |
+| `Attempts` | `integer` | Falhas de publicação |
+| `NextAttemptAt` | `timestamptz` | Quando pode ser publicada |
+| `LeaseToken` · `LeasedUntil` | `uuid?` · `timestamptz?` | Reserva vigente |
+| `PublishedAt` | `timestamptz?` | Quando foi publicada |
+| `LastError` | `varchar(1000)` | Último erro, já sanitizado |
+
+**`inbox_messages`**: chave composta `(MessageId, Consumer)`, `Consumer` `varchar(100)`, `ProcessedAt`.
+
+| Índice (nomes em minúsculas, a partir do nome da tabela) | Chave | Filtro | Para quê |
+|---|---|---|---|
+| `ix_outbox_messages_pending` | `OccurredAt, Id` (inclui `NextAttemptAt`, `LeasedUntil`, `Attempts`) | `"Status" = 0` | Reserva na ordem de ocorrência |
+| `ix_outbox_messages_published` | `PublishedAt` | `"Status" = 1` | Limpeza das publicadas vencidas |
+| `ix_outbox_messages_dead` | `OccurredAt` | `"Status" = 2` | Contagem e listagem das mortas |
+| `ix_inbox_messages_processed_at` | `ProcessedAt` | — | Limpeza do Inbox |
+
+---
+
+## 🔒 Concorrência e locks
+
+A reserva é um único `UPDATE` sobre uma CTE com `SKIP LOCKED`:
+
+```sql
+WITH batch AS (
+    SELECT "Id" FROM "vendas"."outbox_messages"
+    WHERE "Status" = 0 AND "NextAttemptAt" <= @now
+        AND ("LeasedUntil" IS NULL OR "LeasedUntil" < (NOW() AT TIME ZONE 'UTC'))
+    ORDER BY "OccurredAt", "Id"
+    LIMIT @batchSize
+    FOR UPDATE SKIP LOCKED)
+UPDATE "vendas"."outbox_messages" AS target
+SET "LeaseToken" = @token,
+    "LeasedUntil" = (NOW() AT TIME ZONE 'UTC') + (@leaseSeconds * interval '1 second')
+FROM batch
+WHERE target."Id" = batch."Id"
+RETURNING target.*;
+```
+
+| Garantia | Como |
+|---|---|
+| Dois relays não reservam a mesma mensagem | `FOR UPDATE SKIP LOCKED`: o PostgreSQL pula as linhas travadas por outro relay e entrega as seguintes, sem enfileirar transações nem gerar deadlocks |
+| A reserva sobrevive à transação | `LeaseToken` e `LeasedUntil` ficam gravados; a publicação acontece **fora** de transação |
+| Conclusão só por quem reservou | `CompleteAsync` atualiza com `LeaseToken = @token`; reserva assumida por outro relay torna a conclusão inócua |
+| Administração não desfaz reserva ativa | `RequeueAsync` só devolve mortas e pendentes com erro sem reserva vigente |
+
+A conclusão, as estatísticas, a listagem de falhas, o reprocessamento e o descarte têm a mesma semântica do [SQL Server](sqlserver.md#-concorrência-e-locks) (mesmos limites: 1 a 1000 ids, `batchSize` 1 a 1000). A limpeza apaga em lotes com `DELETE ... WHERE "Id" IN (SELECT ... LIMIT @max)`.
+
+---
+
+## ⚙️ Opções
+
+O pacote não tem classe de opções própria: as do relay estão em [📤 Outbox](outbox.md#️-opções) e as da limpeza do Inbox em [📥 Inbox](inbox.md#️-opções). O que se configura é o mapeamento:
+
+| Parâmetro de `AddTecMessagingPostgreSql` | Padrão | Descrição |
+|---|---|---|
+| `schema` | `null` | Esquema das duas tabelas (`null` = o padrão do modelo, normalmente `public`) |
+| `outboxTable` | `outbox_messages` | Tabela do Outbox (compõe o nome dos índices, em minúsculas) |
+| `inboxTable` | `inbox_messages` | Tabela do Inbox |
 
 ---
 
 ## ❌ Erros
 
-| Código / Exceção | Causa | Tratamento |
+| Código / exceção | Causa | Tratamento |
 |---|---|---|
-| `23505` (UniqueViolation) | Mensagem já processada por outro consumidor concorrente | Reconhecida como duplicata por `IInboxStore.IsDuplicate(ex)`, encerrando como `Completed` |
-| `Relation does not exist` | Tabelas de mensageria não criadas | Executar as migrations do EF Core contendo `AddTecMessagingPostgreSql()` |
+| `23505` (`unique_violation`) na constraint do Inbox | Mensagem já processada por outra entrega concorrente | `IInboxStore.IsDuplicate(ex)` devolve `true` só para a chave primária do Inbox; encerre como `Completed` |
+| `InvalidOperationException: OutboxMessage não está no modelo de ...` | Faltou `modelBuilder.AddTecMessagingPostgreSql()` | Chame no `OnModelCreating` e gere a migration |
+| `42P01` (`relation does not exist`) | Tabelas da mensageria não criadas | Gere e aplique a migration com `AddTecMessagingPostgreSql()` |
+| `ArgumentOutOfRangeException` em `RequeueAsync`/`DiscardAsync` | Coleção vazia ou com mais de 1000 ids | Envie de 1 a 1000 ids (`null` em `RequeueAsync` = todas) |
+| `ArgumentOutOfRangeException` em `TryBeginAsync` | Nome do consumidor com mais de 100 caracteres | Use um nome curto e estável |
 
 ---
 
-⬅️ [Outbox](outbox.md) · [📚 Índice](README.md) · [RabbitMQ](rabbitmq.md) ➡️
+## 🛡️ Segurança
+
+> [!WARNING]
+> O relay publica o que está na tabela: quem escreve em `outbox_messages` publica no broker. Conceda escrita só ao usuário da aplicação.
+
+- Nomes de tabela e coluna vêm do modelo e são delimitados (`"` escapado); valores sempre por parâmetro (`NpgsqlParameter`).
+- `LastError` é sanitizado e truncado em 1000 caracteres antes de ser gravado ([🛡️ Segurança](seguranca.md)).
+
+## ❓ Perguntas frequentes
+
+<details>
+<summary><b>Por que o Inbox precisa estar no mesmo DbContext do efeito?</b></summary>
+
+Porque o registro do Inbox entra na unidade de trabalho do contexto e é gravado no mesmo `SaveChanges` do efeito: ou os dois acontecem, ou nenhum.
+</details>
+
+<details>
+<summary><b>Qual a diferença para o SQL Server?</b></summary>
+
+Mesmo contrato e mesma semântica. Mudam o mecanismo de reserva (`SKIP LOCKED` e `RETURNING` no lugar de `UPDLOCK, READPAST` e `OUTPUT`), os nomes padrão (`outbox_messages`) e o nome das extensões (`UsePostgreSql`, `AddTecMessagingPostgreSql`, `UseTecMessagingPostgreSql`). Veja [🗄️ SQL Server](sqlserver.md).
+</details>
+
+---
+⬅️ [🗄️ SQL Server](sqlserver.md) · [📚 Índice](README.md) · [🐇 RabbitMQ](rabbitmq.md) ➡️

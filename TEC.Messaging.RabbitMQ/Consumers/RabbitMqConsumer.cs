@@ -348,12 +348,13 @@ public abstract partial class RabbitMqConsumer : BackgroundService
         }
         catch (Exception ex)
         {
-            LogHandlerFailed(ex, queue.Name, envelope.MessageId, envelope.Type);
-            result = ConsumeResult.Retry(SensitiveDataSanitizer.Sanitize($"{ex.GetType().Name}: {ex.Message}"));
+            var safeError = SensitiveDataSanitizer.Sanitize($"{ex.GetType().Name}: {ex.Message}");
+            LogHandlerFailed(safeError, queue.Name, envelope.MessageId, envelope.Type);
+            result = ConsumeResult.Retry(safeError);
         }
 
         if (result.Action != ConsumeAction.Complete)
-            activity?.SetStatus(ActivityStatusCode.Error, result.Reason);
+            activity?.SetStatus(ActivityStatusCode.Error, SensitiveDataSanitizer.Sanitize(result.Reason));
         await FinishAsync(channel, queue, delivery, result, failures, started, ct).ConfigureAwait(false);
     }
 
@@ -365,6 +366,7 @@ public abstract partial class RabbitMqConsumer : BackgroundService
         if (action == ConsumeAction.Retry && attempt >= queue.MaxAttempts)
             action = ConsumeAction.Reject;
         var messageId = Limit(delivery.BasicProperties.MessageId);
+        var safeReason = SensitiveDataSanitizer.Sanitize(result.Reason);
 
         try
         {
@@ -375,8 +377,8 @@ public abstract partial class RabbitMqConsumer : BackgroundService
                     // requeue reentregaria na hora: com a dependência ainda fora, laço de reentregas até o x-delivery-limit
                     // mandar a mensagem para a DLQ
                     var wait = queue.RetryDelays[0];
-                    await RepublishAsync(delivery, queue.RetryQueue(wait), failures, result.Reason, ct).ConfigureAwait(false);
-                    LogRequeued(queue.Name, messageId, wait, result.Reason);
+                    await RepublishAsync(delivery, queue.RetryQueue(wait), failures, safeReason, ct).ConfigureAwait(false);
+                    LogRequeued(queue.Name, messageId, wait, safeReason);
                     break;
 
                 case ConsumeAction.Requeue:
@@ -387,17 +389,17 @@ public abstract partial class RabbitMqConsumer : BackgroundService
 
                 case ConsumeAction.Retry when !queue.Transient:
                     var delay = queue.RetryDelayAfter(attempt);
-                    await RepublishAsync(delivery, queue.RetryQueue(delay), attempt, result.Reason, ct).ConfigureAwait(false);
-                    LogRetry(queue.Name, messageId, attempt, delay, result.Reason);
+                    await RepublishAsync(delivery, queue.RetryQueue(delay), attempt, safeReason, ct).ConfigureAwait(false);
+                    LogRetry(queue.Name, messageId, attempt, delay, safeReason);
                     break;
 
                 case ConsumeAction.Reject when !queue.Transient:
-                    await RepublishAsync(delivery, queue.DeadLetterQueue, attempt, result.Reason, ct).ConfigureAwait(false);
-                    LogDeadLettered(queue.Name, messageId, result.Reason);
+                    await RepublishAsync(delivery, queue.DeadLetterQueue, attempt, safeReason, ct).ConfigureAwait(false);
+                    LogDeadLettered(queue.Name, messageId, safeReason);
                     break;
 
                 case ConsumeAction.Retry or ConsumeAction.Reject:
-                    LogDiscarded(queue.Name, messageId, result.Reason);
+                    LogDiscarded(queue.Name, messageId, safeReason);
                     break;
             }
 
@@ -449,8 +451,8 @@ public abstract partial class RabbitMqConsumer : BackgroundService
     [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Falha no canal da fila {Queue}; reabrindo")]
     private partial void LogChannelFailed(Exception exception, string queue);
 
-    [LoggerMessage(EventId = 4204, Level = LogLevel.Error, Message = "Falha ao processar {MessageId} ({Type}) da fila {Queue}")]
-    private partial void LogHandlerFailed(Exception exception, string queue, Guid messageId, string type);
+    [LoggerMessage(EventId = 4204, Level = LogLevel.Error, Message = "Falha ao processar {MessageId} ({Type}) da fila {Queue}: {Error}")]
+    private partial void LogHandlerFailed(string error, string queue, Guid messageId, string type);
 
     [LoggerMessage(EventId = 4205, Level = LogLevel.Warning, Message = "Mensagem {MessageId} da fila {Queue} em espera: tentativa {Attempt}, nova em {Delay} ({Reason})")]
     private partial void LogRetry(string queue, string? messageId, int attempt, TimeSpan delay, string? reason);

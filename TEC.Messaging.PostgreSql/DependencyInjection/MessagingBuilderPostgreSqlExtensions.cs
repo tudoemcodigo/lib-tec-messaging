@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TEC.Messaging.DependencyInjection;
+using TEC.Messaging.Diagnostics;
 using TEC.Messaging.Inbox;
 using TEC.Messaging.Outbox;
 using TEC.Messaging.PostgreSql.Interception;
@@ -30,7 +31,11 @@ public static class MessagingBuilderPostgreSqlExtensions
         services.TryAddScoped<IInboxStore, PostgreSqlInboxStore<TContext>>();
         services.TryAddScoped<IOutbox, PostgreSqlOutbox<TContext>>();
 
-        services.TryAddSingleton<TecMessagingPostgreSqlSaveChangesInterceptor>();
+        services.TryAddSingleton(sp => new TecMessagingPostgreSqlSaveChangesInterceptor(
+            sp.GetRequiredService<IntegrationEnvelopeFactory>(),
+            sp.GetServices<IPostgreSqlDomainEventsSavingObserver>(),
+            sp.GetRequiredService<MessagingMetrics>(),
+            sp.GetRequiredService<TimeProvider>()));
         return builder;
     }
 

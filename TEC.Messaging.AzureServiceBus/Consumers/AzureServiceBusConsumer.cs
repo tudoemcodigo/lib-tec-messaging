@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Hosting;
@@ -56,26 +57,51 @@ public abstract class AzureServiceBusConsumer : BackgroundService
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var client = await _deps.Connection.GetClientAsync(stoppingToken).ConfigureAwait(false);
         var def = Definition;
 
-        var options = new ServiceBusProcessorOptions
+        while (!stoppingToken.IsCancellationRequested)
         {
-            AutoCompleteMessages = false,
-            MaxConcurrentCalls = def.MaxConcurrentCalls,
-        };
+            try
+            {
+                var client = await _deps.Connection.GetClientAsync(stoppingToken).ConfigureAwait(false);
 
-        if (def.AutoRenewLockDuration is { } lockDuration)
-            options.MaxAutoLockRenewalDuration = lockDuration;
+                var options = new ServiceBusProcessorOptions
+                {
+                    AutoCompleteMessages = false,
+                    MaxConcurrentCalls = def.MaxConcurrentCalls,
+                };
 
-        _processor = def.Subscription is not null
-            ? client.CreateProcessor(def.TopicOrQueue, def.Subscription, options)
-            : client.CreateProcessor(def.TopicOrQueue, options);
+                if (def.AutoRenewLockDuration is { } lockDuration)
+                    options.MaxAutoLockRenewalDuration = lockDuration;
 
-        _processor.ProcessMessageAsync += ProcessMessageAsync;
-        _processor.ProcessErrorAsync += ProcessErrorAsync;
+                _processor = def.Subscription is not null
+                    ? client.CreateProcessor(def.TopicOrQueue, def.Subscription, options)
+                    : client.CreateProcessor(def.TopicOrQueue, options);
 
-        await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
+                _processor.ProcessMessageAsync += ProcessMessageAsync;
+                _processor.ProcessErrorAsync += ProcessErrorAsync;
+
+                await _processor.StartProcessingAsync(stoppingToken).ConfigureAwait(false);
+                break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                var safeMsg = SensitiveDataSanitizer.Sanitize(ex.Message);
+                _logger.LogWarning("Falha ao iniciar processador do Azure Service Bus na entidade {Entity}: {Error}. Nova tentativa em 5 s...", def.TopicOrQueue, safeMsg);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
 
         try
         {
@@ -87,27 +113,42 @@ public abstract class AzureServiceBusConsumer : BackgroundService
         }
         finally
         {
-            await _processor.StopProcessingAsync(CancellationToken.None).ConfigureAwait(false);
-            await _processor.DisposeAsync().ConfigureAwait(false);
+            if (_processor is not null)
+            {
+                await _processor.StopProcessingAsync(CancellationToken.None).ConfigureAwait(false);
+                await _processor.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
     private async Task ProcessMessageAsync(ProcessMessageEventArgs args)
     {
+        if (args.CancellationToken.IsCancellationRequested)
+            return;
+
         var raw = args.Message;
         var body = Encoding.UTF8.GetString(raw.Body);
 
-        _ = Guid.TryParse(raw.MessageId, out var messageId);
+        var messageId = Guid.TryParse(raw.MessageId, out var parsedId) && parsedId != Guid.Empty
+            ? parsedId
+            : DeterministicGuid.Create(raw.MessageId);
+
         var type = raw.Subject ?? (raw.ApplicationProperties.TryGetValue("type", out var t) ? Convert.ToString(t) : "unknown") ?? "unknown";
         var version = raw.ApplicationProperties.TryGetValue("version", out var v) && int.TryParse(Convert.ToString(v), out var ver) ? ver : 1;
         var traceParent = raw.ApplicationProperties.TryGetValue("traceparent", out var tp) ? Convert.ToString(tp) : null;
         var causationId = raw.ApplicationProperties.TryGetValue("causation-id", out var c) ? Convert.ToString(c) : null;
 
+        var occurredAt = raw.ApplicationProperties.TryGetValue("occurred-at", out var oa) && DateTimeOffset.TryParse(Convert.ToString(oa), out var parsedOa)
+            ? parsedOa
+            : (raw.ApplicationProperties.TryGetValue("occurredAt", out var oa2) && DateTimeOffset.TryParse(Convert.ToString(oa2), out var parsedOa2)
+                ? parsedOa2
+                : raw.EnqueuedTime);
+
         var envelope = new MessageEnvelope(
-            messageId == Guid.Empty ? Guid.NewGuid() : messageId,
+            messageId,
             type,
             version,
-            raw.EnqueuedTime,
+            occurredAt,
             raw.CorrelationId,
             causationId,
             traceParent,
@@ -126,6 +167,16 @@ public abstract class AzureServiceBusConsumer : BackgroundService
             result = ConsumeResult.Retry(SensitiveDataSanitizer.Sanitize($"{ex.GetType().Name}: {ex.Message}"));
         }
 
+        if (args.CancellationToken.IsCancellationRequested)
+            return;
+
+        if (result.Action is ConsumeAction.Reject or ConsumeAction.Retry)
+        {
+            var sanitizedReason = SensitiveDataSanitizer.Sanitize(result.Reason ?? string.Empty);
+            if (!string.IsNullOrEmpty(sanitizedReason))
+                activity?.SetStatus(ActivityStatusCode.Error, sanitizedReason);
+        }
+
         switch (result.Action)
         {
             case ConsumeAction.Complete:
@@ -138,14 +189,16 @@ public abstract class AzureServiceBusConsumer : BackgroundService
             case ConsumeAction.Requeue:
             case ConsumeAction.Retry:
             default:
-                await args.AbandonMessageAsync(raw, cancellationToken: args.CancellationToken).ConfigureAwait(false);
+                if (!args.CancellationToken.IsCancellationRequested)
+                    await args.AbandonMessageAsync(raw, cancellationToken: args.CancellationToken).ConfigureAwait(false);
                 break;
         }
     }
 
     private Task ProcessErrorAsync(ProcessErrorEventArgs args)
     {
-        _logger.LogError(args.Exception, "Erro no processamento do Azure Service Bus na entidade {EntityPath}", args.EntityPath);
+        var safeMsg = SensitiveDataSanitizer.Sanitize(args.Exception?.Message ?? string.Empty);
+        _logger.LogError("Erro no processamento do Azure Service Bus na entidade {EntityPath}: {Error}", args.EntityPath, safeMsg);
         return Task.CompletedTask;
     }
 }

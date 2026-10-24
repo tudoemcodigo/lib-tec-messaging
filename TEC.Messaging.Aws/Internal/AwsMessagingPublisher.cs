@@ -19,7 +19,7 @@ internal sealed class AwsMessagingPublisher(
         ArgumentNullException.ThrowIfNull(envelope);
         var settings = options.Value;
         if (!settings.Enabled)
-            throw new InvalidOperationException("Transporte AWS desabilitado.");
+            throw new AwsMessagingUnavailableException("Transporte AWS desabilitado.");
 
         var destination = !string.IsNullOrWhiteSpace(settings.DefaultDestination)
             ? settings.DefaultDestination
@@ -33,55 +33,70 @@ internal sealed class AwsMessagingPublisher(
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(settings.PublishTimeout);
 
-        if (destination.StartsWith("arn:aws:sns:", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            var sns = await clientFactory.GetSnsAsync(timeout.Token).ConfigureAwait(false);
-            var request = new PublishRequest
+            if (destination.StartsWith("arn:aws:sns:", StringComparison.OrdinalIgnoreCase))
             {
-                TopicArn = destination,
-                Message = sent.Payload,
-                MessageAttributes = new Dictionary<string, Amazon.SimpleNotificationService.Model.MessageAttributeValue>
+                var sns = await clientFactory.GetSnsAsync(timeout.Token).ConfigureAwait(false);
+                var request = new PublishRequest
                 {
-                    ["messageId"] = new() { DataType = "String", StringValue = sent.MessageId.ToString() },
-                    ["type"] = new() { DataType = "String", StringValue = sent.Type },
-                    ["version"] = new() { DataType = "Number", StringValue = sent.Version.ToString(CultureInfo.InvariantCulture) },
-                    ["occurredAt"] = new() { DataType = "String", StringValue = sent.OccurredAt.ToString("O") },
-                },
-            };
+                    TopicArn = destination,
+                    Message = sent.Payload,
+                    MessageAttributes = new Dictionary<string, Amazon.SimpleNotificationService.Model.MessageAttributeValue>
+                    {
+                        ["messageId"] = new() { DataType = "String", StringValue = sent.MessageId.ToString() },
+                        ["type"] = new() { DataType = "String", StringValue = sent.Type },
+                        ["version"] = new() { DataType = "Number", StringValue = sent.Version.ToString(CultureInfo.InvariantCulture) },
+                        ["occurredAt"] = new() { DataType = "String", StringValue = sent.OccurredAt.ToString("O") },
+                    },
+                };
 
-            if (sent.CorrelationId is not null)
-                request.MessageAttributes["correlationId"] = new() { DataType = "String", StringValue = sent.CorrelationId };
-            if (sent.CausationId is not null)
-                request.MessageAttributes["causationId"] = new() { DataType = "String", StringValue = sent.CausationId };
-            if (sent.TraceParent is not null)
-                request.MessageAttributes["traceparent"] = new() { DataType = "String", StringValue = sent.TraceParent };
+                if (sent.CorrelationId is not null)
+                    request.MessageAttributes["correlationId"] = new() { DataType = "String", StringValue = sent.CorrelationId };
+                if (sent.CausationId is not null)
+                    request.MessageAttributes["causationId"] = new() { DataType = "String", StringValue = sent.CausationId };
+                if (sent.TraceParent is not null)
+                    request.MessageAttributes["traceparent"] = new() { DataType = "String", StringValue = sent.TraceParent };
 
-            await sns.PublishAsync(request, timeout.Token).ConfigureAwait(false);
+                await sns.PublishAsync(request, timeout.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                var sqs = await clientFactory.GetSqsAsync(timeout.Token).ConfigureAwait(false);
+                var request = new SendMessageRequest
+                {
+                    QueueUrl = destination,
+                    MessageBody = sent.Payload,
+                    MessageAttributes = new Dictionary<string, Amazon.SQS.Model.MessageAttributeValue>
+                    {
+                        ["messageId"] = new() { DataType = "String", StringValue = sent.MessageId.ToString() },
+                        ["type"] = new() { DataType = "String", StringValue = sent.Type },
+                        ["version"] = new() { DataType = "Number", StringValue = sent.Version.ToString(CultureInfo.InvariantCulture) },
+                        ["occurredAt"] = new() { DataType = "String", StringValue = sent.OccurredAt.ToString("O") },
+                    },
+                };
+
+                if (sent.CorrelationId is not null)
+                    request.MessageAttributes["correlationId"] = new() { DataType = "String", StringValue = sent.CorrelationId };
+                if (sent.CausationId is not null)
+                    request.MessageAttributes["causationId"] = new() { DataType = "String", StringValue = sent.CausationId };
+                if (sent.TraceParent is not null)
+                    request.MessageAttributes["traceparent"] = new() { DataType = "String", StringValue = sent.TraceParent };
+
+                await sqs.SendMessageAsync(request, timeout.Token).ConfigureAwait(false);
+            }
         }
-        else
+        catch (Amazon.Runtime.AmazonServiceException ex)
         {
-            var sqs = await clientFactory.GetSqsAsync(timeout.Token).ConfigureAwait(false);
-            var request = new SendMessageRequest
-            {
-                QueueUrl = destination,
-                MessageBody = sent.Payload,
-                MessageAttributes = new Dictionary<string, Amazon.SQS.Model.MessageAttributeValue>
-                {
-                    ["messageId"] = new() { DataType = "String", StringValue = sent.MessageId.ToString() },
-                    ["type"] = new() { DataType = "String", StringValue = sent.Type },
-                    ["version"] = new() { DataType = "Number", StringValue = sent.Version.ToString(CultureInfo.InvariantCulture) },
-                    ["occurredAt"] = new() { DataType = "String", StringValue = sent.OccurredAt.ToString("O") },
-                },
-            };
-
-            if (sent.CorrelationId is not null)
-                request.MessageAttributes["correlationId"] = new() { DataType = "String", StringValue = sent.CorrelationId };
-            if (sent.CausationId is not null)
-                request.MessageAttributes["causationId"] = new() { DataType = "String", StringValue = sent.CausationId };
-            if (sent.TraceParent is not null)
-                request.MessageAttributes["traceparent"] = new() { DataType = "String", StringValue = sent.TraceParent };
-
-            await sqs.SendMessageAsync(request, timeout.Token).ConfigureAwait(false);
+            throw new AwsMessagingUnavailableException($"Falha no serviço AWS ({ex.StatusCode}): {ex.Message}", ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new AwsMessagingUnavailableException("Timeout aguardando confirmação da AWS.", ex);
+        }
+        catch (Exception ex) when (ex is not (OperationCanceledException or AwsMessagingUnavailableException))
+        {
+            throw new AwsMessagingUnavailableException($"Falha ao publicar na AWS: {ex.Message}", ex);
         }
     }
 }

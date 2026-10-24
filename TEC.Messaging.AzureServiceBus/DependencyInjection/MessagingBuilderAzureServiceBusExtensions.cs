@@ -48,6 +48,11 @@ public static class MessagingBuilderAzureServiceBusExtensions
         return builder;
     }
 
+    /// <summary>Alias para <see cref="AddAzureServiceBusConsumer{TConsumer}"/>.</summary>
+    public static MessagingBuilder AddConsumer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TConsumer>(this MessagingBuilder builder)
+        where TConsumer : AzureServiceBusConsumer
+        => builder.AddAzureServiceBusConsumer<TConsumer>();
+
     /// <summary>
     /// Registra um consumidor do Azure Service Bus no container como serviço hospedado.
     /// </summary>
