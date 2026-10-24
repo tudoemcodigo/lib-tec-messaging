@@ -36,7 +36,7 @@
         "type": "Direct",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "s63zGhH8AZf2x6eKLA2ITOvRlJvI6177XRY2vvAA46afgjLm2Al+uC4ZapJijH+MGLu7qGM6x1MoT+aHAkhYXw==",
+        "contentHash": "crogmEjdV23FW3mvbVXwH8dirmuvmpWrGGZFnbI9++UKkpKb3C3X+Ho2VLEU2NmNVTdFbu5pQvPb8c+Lv6xNgA==",
         "dependencies": {
           "Microsoft.Extensions.Caching.Memory": "10.0.12",
           "Microsoft.Extensions.Configuration": "10.0.12",
@@ -418,7 +418,7 @@
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Polly.Core": "[8.8.0, )",
           "RabbitMQ.Client": "[7.2.2, )",
-          "TEC.Messaging": "[0.2.0, )",
+          "TEC.Messaging": "[0.0.1, )",
           "TEC.Vault": "[0.0.1, )"
         }
       },
@@ -426,7 +426,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
-          "TEC.Messaging": "[0.2.0, )"
+          "TEC.Messaging": "[0.0.1, )"
         }
       },
       "Microsoft.EntityFrameworkCore.Relational": {
@@ -627,7 +627,7 @@
         "type": "CentralTransitive",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "+KSoC5KdNrI9H6fMRJVE1nLBDobTVZib3/TAtZ8e59b90FF9IndZIh30gee7FGaHGvLQIacgvgmQTXUp8J40EQ==",
+        "contentHash": "t73JcW3viVH3wMr6MXJGxkhN70fFcDkqi94psK6oI6QdnqY/jSnL266lI28jB+FNSqRXqQb4xCTNCt3Mku/K4A==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }
@@ -636,7 +636,7 @@
         "type": "CentralTransitive",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "4r41dGxSuFURuzN0Tx4YLFULVeq0YoEw6PlIx+o1QdTM6m6wSFSObs2X+R5XFpPmapV7kUkZ8noIutGIKkYGyQ==",
+        "contentHash": "HetUn+UEQXgyeOIhwbuHRZ0UYN8yTCrovM7lBWEe4k4t/JXb9nM73mAUVyPFC4y0uFvL4iTm71wscbf3nyI5+g==",
         "dependencies": {
           "Microsoft.Extensions.Caching.Memory": "10.0.12",
           "Microsoft.Extensions.Configuration": "10.0.12",

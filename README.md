@@ -10,7 +10,7 @@
 ![.NET](https://img.shields.io/badge/.NET-8%20%7C%2010-512BD4)
 ![AOT](https://img.shields.io/badge/Native%20AOT-n%C3%BAcleo%20%26%20RabbitMQ-success)
 ![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)
-![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)
+[![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
 
 [Início rápido](#-início-rápido) · [Documentação](docs/README.md) · [Changelog](CHANGELOG.md)
 
@@ -27,8 +27,11 @@
 - [🚀 Início rápido](#-início-rápido)
 - [📚 Documentação](#-documentação)
 - [⚡ Compatibilidade](#-compatibilidade)
-- [🛡️ Segurança · 🧪 Testes](#️-segurança--testes)
-- [🤝 Contribuição · 🏷️ Versionamento · 📄 Licença](#-contribuição--️-versionamento--licença)
+- [🛡️ Segurança](#️-segurança)
+- [🧪 Testes](#-testes)
+- [🤝 Contribuição](#-contribuição)
+- [🏷️ Versionamento](#️-versionamento)
+- [📄 Licença](#-licença)
 
 ---
 
@@ -53,7 +56,7 @@
 | `TEC.Messaging` | Envelope, contratos, mapeadores, Outbox/Inbox (abstrações), sanitizador LGPD de PII, relay, correlação, métricas | Sempre | `TEC.Core` |
 | `TEC.Messaging.SqlServer` | Outbox e Inbox no SQL Server com EF Core, interceptor de eventos de domínio, administração | Persistência em SQL Server com EF Core | `TEC.Messaging`, EF Core |
 | `TEC.Messaging.PostgreSql` | Outbox e Inbox no PostgreSQL com EF Core (`FOR UPDATE SKIP LOCKED`, `RETURNING`), interceptor | Persistência em PostgreSQL com EF Core | `TEC.Messaging`, EF Core, Npgsql |
-| `TEC.Messaging.RabbitMQ` | Publicador com confirms, consumidores com concorrência paralela, retry escalonado, DLQ, pausa, health check | Broker RabbitMQ 3.13+/4.x | `TEC.Messaging`, `TEC.Vault`, RabbitMQ.Client 7 |
+| `TEC.Messaging.RabbitMQ` | Publicador com confirms, consumidores com concorrência paralela, retry escalonado, DLQ, pausa, health check | Broker RabbitMQ 3.13+/4.x | `TEC.Messaging`, `TEC.Vault`, RabbitMQ.Client 7, Polly.Core |
 | `TEC.Messaging.AzureServiceBus` | Publicador e consumidor para filas e tópicos do Azure Service Bus, confirms, DLQ, concorrência, health check | Nuvem Microsoft Azure | `TEC.Messaging`, `TEC.Vault`, Azure.Messaging.ServiceBus |
 | `TEC.Messaging.Aws` | Publicador e consumidor para filas Amazon SQS e tópicos SNS, long polling, concorrência, DLQ, health check | Nuvem Amazon Web Services (AWS) | `TEC.Messaging`, `TEC.Vault`, AWSSDK (SQS/SNS) |
 
@@ -156,17 +159,22 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps, IServiceScope
 
 | Arquivo | O que responde |
 |---|---|
-| [📜 Contratos de integração](docs/contratos-de-integracao.md) | Como nomear e versionar eventos, mapear eventos de domínio e registrar com AOT |
+| [📜 Contratos de integração](docs/contratos-de-integracao.md) | Como nomear e versionar eventos, mapear eventos de domínio, o envelope e o registro com AOT |
 | [📤 Outbox](docs/outbox.md) | Como o evento entra no Outbox, como o relay publica, falhas, `Dead` e administração |
 | [📥 Inbox](docs/inbox.md) | Como tornar o consumidor idempotente |
-| [🐘 PostgreSQL](docs/postgresql.md) | Persistência com PostgreSQL (SKIP LOCKED, RETURNING) |
-| [🐇 RabbitMQ](docs/rabbitmq.md) | Topologia, retry, DLQ, concorrência paralela, pausa e health check |
+| [🗄️ SQL Server](docs/sqlserver.md) | Persistência com SQL Server (esquema, índices, `UPDLOCK`/`READPAST`, interceptor) |
+| [🐘 PostgreSQL](docs/postgresql.md) | Persistência com PostgreSQL (esquema, índices, `SKIP LOCKED`, `RETURNING`) |
+| [🐇 RabbitMQ](docs/rabbitmq.md) | Topologia, retry, DLQ, concorrência paralela, pausa e circuit breaker |
 | [☁️ Azure Service Bus](docs/azureservicebus.md) | Publicador e consumidor em tópicos e filas no Azure Service Bus |
 | [🟧 AWS SQS / SNS](docs/aws.md) | Publicador e consumidor com Amazon SQS e SNS |
-| [📡 Telemetria](docs/telemetria.md) | Spans, métricas e correlação |
-| [🛡️ Segurança e LGPD](docs/seguranca.md) | Sanitização de PII, segredos no cofre e limites de payload |
-| [🧪 Testes](docs/testes.md) | Categorias, testes unitários e de integração |
-| [🛠️ Desenvolvimento](docs/desenvolvimento.md) | Build, modo local e publicação |
+| [📡 Telemetria](docs/telemetria.md) | Spans, métricas, logs e correlação |
+| [🛡️ Segurança e LGPD](docs/seguranca.md) | Sanitização de PII, segredos no cofre, limites de payload e riscos residuais |
+| [🧪 Testes](docs/testes.md) | Categorias, testes unitários, de integração, carga e benchmarks |
+| [🛠️ Desenvolvimento](docs/desenvolvimento.md) | Build, modo local, lock files e publicação |
+| [🔍 Revisão técnica](docs/revisao-tecnica.md) | Achados de segurança, bugs e organização (2026-10-19), correções aplicadas e melhorias sugeridas |
+| [🏛️ Decisões Arquiteturais (ADRs)](docs/adr/README.md) | Registros formais das decisões de arquitetura e engenharia do TEC.Messaging |
+
+Também: [🧰 Samples](samples/README.md) · [⚙️ CI/CD](.github/workflows/README.md) · READMEs dos pacotes ([SqlServer](TEC.Messaging.SqlServer/README.md), [PostgreSql](TEC.Messaging.PostgreSql/README.md), [RabbitMQ](TEC.Messaging.RabbitMQ/README.md), [AzureServiceBus](TEC.Messaging.AzureServiceBus/README.md), [Aws](TEC.Messaging.Aws/README.md)).
 
 ---
 
@@ -181,11 +189,22 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps, IServiceScope
 
 ---
 
-## 🛡️ Segurança · 🧪 Testes
+## 🛡️ Segurança
 
-Higienização ativa de PII em logs e erros (LGPD), credenciais de brokers e bancos resolvidas estritamente via `TEC.Vault`, limite de payload configurável (4 MiB) e correlação sanitizada. Unitários sem dependências; integração com SQL Server, PostgreSQL, RabbitMQ e mocks de nuvem. Detalhes em [docs/seguranca.md](docs/seguranca.md) e [docs/testes.md](docs/testes.md).
+Sanitização de PII (LGPD) nos erros gravados no Outbox, nos cabeçalhos e motivos de DLQ e nos resumos do relay, credenciais de brokers resolvidas via `TEC.Vault`, limite de payload configurável (padrão 256 KiB, até 4 MiB) e correlação sanitizada. Detalhes, riscos residuais e checklist em [docs/seguranca.md](docs/seguranca.md).
 
-## 🤝 Contribuição · 🏷️ Versionamento · 📄 Licença
+## 🧪 Testes
 
-PR para a `main` com o `ci-ok` verde. [SemVer](https://semver.org/lang/pt-BR/) (em `0.x`, mudanças incompatíveis podem
-ocorrer em versões MINOR); prévias `X.Y.Z-preview.N` a cada merge. Licença [MIT](LICENSE).
+Unitários sem dependências; integração com SQL Server e RabbitMQ em container (PostgreSQL, Azure Service Bus e AWS têm testes unitários). Detalhes em [docs/testes.md](docs/testes.md).
+
+## 🤝 Contribuição
+
+PR para a `main` com o `ci-ok` verde. Veja [docs/desenvolvimento.md](docs/desenvolvimento.md).
+
+## 🏷️ Versionamento
+
+[SemVer](https://semver.org/lang/pt-BR/) (em `0.x`, mudanças incompatíveis podem ocorrer em versões MINOR); prévias `X.Y.Z-preview.N` a cada merge. Histórico no [Changelog](CHANGELOG.md).
+
+## 📄 Licença
+
+[Apache 2.0](LICENSE) · Criado e mantido por **Roberto Oliveira**, equipe **Tudo em Código** · [github.com/tudoemcodigo](https://github.com/tudoemcodigo)

@@ -35,7 +35,7 @@ concurrency:
 jobs:
   rapida:
     if: inputs.suite != 'pesadas'
-    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v2
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
     permissions:
       contents: read
       packages: read
@@ -48,7 +48,7 @@ jobs:
 
   pesados:
     if: inputs.suite != 'rapida'
-    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v2
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-test.yml@v1
     permissions:
       contents: read
       packages: read
@@ -64,7 +64,7 @@ jobs:
 
   benchmarks:
     if: inputs.benchmarks
-    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-benchmark.yml@v2
+    uses: tudoemcodigo/tec-workflows/.github/workflows/dotnet-benchmark.yml@v1
     permissions:
       contents: read
       packages: read
