@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Micro-benchmarks (BenchmarkDotNet): custo da montagem de envelopes (mapeamento + JSON + UUIDv7) e da validação.
+    Rodam sob demanda, sempre em Release (docs/testes.md): não fazem parte do dotnet test.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

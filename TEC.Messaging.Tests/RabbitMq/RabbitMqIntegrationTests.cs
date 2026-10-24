@@ -1,0 +1,324 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using RabbitMQ.Client;
+using TEC.Messaging.Administration;
+using TEC.Messaging.Context;
+using TEC.Messaging.DependencyInjection;
+using TEC.Messaging.RabbitMQ;
+using TEC.Messaging.RabbitMQ.Consumers;
+using TEC.Messaging.RabbitMQ.DependencyInjection;
+using TEC.Messaging.Tests.Shared;
+using TEC.Messaging.Transport;
+using TEC.Vault.DependencyInjection;
+using TEC.Vault.InMemory;
+
+namespace TEC.Messaging.Tests.RabbitMq;
+
+/// <summary>Comportamento configurável dos consumidores de teste e o que eles receberam.</summary>
+internal sealed class Probe
+{
+    public ConcurrentQueue<(ReceivedMessage Message, string? Correlation, string? Causation)> Received { get; } = new();
+
+    public Func<ReceivedMessage, ConsumeResult> Behavior { get; set; } = _ => ConsumeResult.Completed;
+
+    /// <summary>Comportamento assíncrono (ex.: handler demorado); quando definido, vale no lugar de <see cref="Behavior"/>.</summary>
+    public Func<ReceivedMessage, CancellationToken, Task<ConsumeResult>>? AsyncBehavior { get; set; }
+
+    public async Task<bool> WaitAsync(Func<int, bool> condition, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < until)
+        {
+            if (condition(Received.Count))
+                return true;
+            await Task.Delay(100);
+        }
+
+        return condition(Received.Count);
+    }
+}
+
+internal sealed class ProbeConsumer(RabbitMqConsumerDependencies dependencies, Probe probe, QueueDefinition queue) : RabbitMqConsumer(dependencies)
+{
+    protected override QueueDefinition Queue { get; } = queue;
+
+    protected override Task<ConsumeResult> HandleAsync(ReceivedMessage message, CancellationToken cancellationToken)
+    {
+        probe.Received.Enqueue((message, MessageContext.CorrelationId, MessageContext.CausationId));
+        return probe.AsyncBehavior is { } behavior ? behavior(message, cancellationToken) : Task.FromResult(probe.Behavior(message));
+    }
+}
+
+/// <summary>Publicação, consumo, nova tentativa e DLQ num RabbitMQ real.</summary>
+[Category(TestCategories.Integration)]
+public class RabbitMqIntegrationTests
+{
+    private sealed class Broker : IAsyncDisposable
+    {
+        private readonly IHost _host;
+        private readonly string _uri;
+
+        private Broker(IHost host, string uri, string exchange, QueueDefinition queue, Probe probe)
+        {
+            _host = host;
+            _uri = uri;
+            Exchange = exchange;
+            Queue = queue;
+            Probe = probe;
+        }
+
+        public string Exchange { get; }
+
+        public QueueDefinition Queue { get; }
+
+        public Probe Probe { get; }
+
+        public IServiceProvider Services => _host.Services;
+
+        public static async Task<Broker> StartAsync(Func<string, QueueDefinition> queueFactory)
+        {
+            var uri = TestSettings.RabbitUri;
+            Skip.When(uri is null, $"Sem RabbitMQ de testes: defina {TestSettings.RabbitVariable} (ou TecTestes:MessagingRabbitUri no user-secrets).");
+
+            var suffix = Guid.NewGuid().ToString("N")[..8];
+            var exchange = $"tec-testes.{suffix}";
+            var queue = queueFactory($"tec-testes.{suffix}");
+            var probe = new Probe();
+
+            var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+            builder.Logging.SetMinimumLevel(LogLevel.Warning);
+            builder.Services.AddTecVault(v => v.UseInMemory(o => o.InitialSecrets["rabbitmq"] = uri!));
+            builder.Services.AddSingleton(probe);
+            builder.Services.AddSingleton(sp => new ProbeConsumer(sp.GetRequiredService<RabbitMqConsumerDependencies>(), probe, queue));
+            builder.Services.AddTecMessaging()
+                .UseRabbitMq(o =>
+                {
+                    o.Exchange = exchange;
+                    o.RoutingKeyPrefixToRemove = "testes.";
+                    o.DeadLetterMonitorInterval = TimeSpan.Zero;
+                })
+                .AddConsumer<ProbeConsumer>();
+            var host = builder.Build();
+            await host.StartAsync();
+            // O consumidor declara fila e ligação em segundo plano: publicar antes disso descartaria a mensagem (mandatory=false)
+            await WaitForConsumerAsync(uri!, queue.Name);
+            return new Broker(host, uri!, exchange, queue, probe);
+        }
+
+        /// <summary>Espera a fila ter consumidor (fila, ligação e QoS já declarados pelo consumidor).</summary>
+        private static async Task WaitForConsumerAsync(string uri, string queue)
+        {
+            var factory = new ConnectionFactory { Uri = new Uri(uri) };
+            await using var connection = await factory.CreateConnectionAsync();
+            var until = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (DateTime.UtcNow < until)
+            {
+                // Declaração passiva de fila inexistente fecha o canal: um canal por tentativa
+                await using var channel = await connection.CreateChannelAsync();
+                try
+                {
+                    if ((await channel.QueueDeclarePassiveAsync(queue)).ConsumerCount > 0)
+                        return;
+                }
+                catch (global::RabbitMQ.Client.Exceptions.OperationInterruptedException)
+                {
+                    // Fila ainda não declarada
+                }
+
+                await Task.Delay(50);
+            }
+
+            throw new TimeoutException($"Fila {queue} sem consumidor em 20 s.");
+        }
+
+        public Task PublishAsync(MessageEnvelope envelope) => Services.GetRequiredService<IMessagePublisher>().PublishAsync(envelope, CancellationToken.None);
+
+        public Task StopAsync() => _host.StopAsync();
+
+        /// <summary>Mensagens prontas numa fila (conexão própria, fora do host).</summary>
+        public async Task<uint> CountAsync(string queue)
+        {
+            var factory = new ConnectionFactory { Uri = new Uri(_uri) };
+            await using var connection = await factory.CreateConnectionAsync();
+            await using var channel = await connection.CreateChannelAsync();
+            return (await channel.QueueDeclarePassiveAsync(queue)).MessageCount;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _host.StopAsync();
+            _host.Dispose();
+
+            // Limpeza da topologia descartável do teste
+            var factory = new ConnectionFactory { Uri = new Uri(_uri) };
+            await using var connection = await factory.CreateConnectionAsync();
+            await using var channel = await connection.CreateChannelAsync();
+            await channel.QueueDeleteAsync(Queue.Name);
+            await channel.QueueDeleteAsync(Queue.DeadLetterQueue);
+            foreach (var delay in Queue.RetryDelays.Distinct())
+                await channel.QueueDeleteAsync(Queue.RetryQueue(delay));
+            await channel.ExchangeDeleteAsync(Exchange);
+        }
+    }
+
+    private static MessageEnvelope Envelope() =>
+        new(Guid.NewGuid(), "testes.pedido-aprovado", 1, DateTimeOffset.UtcNow, "corr-integracao", null, null, "{\"pedidoId\":1}");
+
+    [Test]
+    public async Task Published_message_is_consumed_with_correlation_and_causation()
+    {
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]));
+        var envelope = Envelope();
+
+        await broker.PublishAsync(envelope);
+
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 1, TimeSpan.FromSeconds(20))).IsTrue();
+        var (message, correlation, causation) = broker.Probe.Received.Single();
+        await Assert.That(message.Envelope.MessageId).IsEqualTo(envelope.MessageId);
+        await Assert.That(message.Envelope.Payload).IsEqualTo("{\"pedidoId\":1}");
+        await Assert.That(correlation).IsEqualTo("corr-integracao");
+        await Assert.That(causation).IsEqualTo(envelope.MessageId.ToString());
+        await Assert.That(message.PreviousFailures).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Retry_goes_through_the_wait_queue_and_comes_back()
+    {
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]) { RetryDelays = [TimeSpan.FromSeconds(1)] });
+        broker.Probe.Behavior = m => m.PreviousFailures == 0 ? ConsumeResult.Retry("falha temporária") : ConsumeResult.Completed;
+
+        await broker.PublishAsync(Envelope());
+
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 2, TimeSpan.FromSeconds(30))).IsTrue();
+        await Assert.That(broker.Probe.Received.Last().Message.PreviousFailures).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Rejected_message_goes_to_the_dlq_and_can_be_requeued()
+    {
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]));
+        var rejectFirst = 1;
+        broker.Probe.Behavior = _ => Interlocked.Exchange(ref rejectFirst, 0) == 1 ? ConsumeResult.Reject("inválida") : ConsumeResult.Completed;
+        var envelope = Envelope();
+        var admin = broker.Services.GetRequiredService<IDeadLetterAdministration>();
+
+        await broker.PublishAsync(envelope);
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 1, TimeSpan.FromSeconds(20))).IsTrue();
+
+        IReadOnlyList<DeadLetterMessage> dead = [];
+        for (var i = 0; i < 50 && dead.Count == 0; i++)
+        {
+            dead = (await admin.ListAsync(broker.Queue.Name, 10, CancellationToken.None)).Value;
+            await Task.Delay(100);
+        }
+
+        await Assert.That(dead.Single().MessageId).IsEqualTo(envelope.MessageId);
+        await Assert.That(dead.Single().LastError).IsEqualTo("inválida");
+        await Assert.That((await admin.CountAsync(broker.Queue.Name, CancellationToken.None)).Value).IsEqualTo(1);
+
+        var moved = await admin.RequeueAsync(broker.Queue.Name, [envelope.MessageId], null, CancellationToken.None);
+        await Assert.That(moved.Value).IsEqualTo(1);
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 2, TimeSpan.FromSeconds(20))).IsTrue();
+        await Assert.That(broker.Probe.Received.Last().Message.PreviousFailures).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Missing_queue_is_reported_as_not_found()
+    {
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]));
+        var admin = broker.Services.GetRequiredService<IDeadLetterAdministration>();
+
+        var result = await admin.ListAsync("tec-testes.nao-existe", 10, CancellationToken.None);
+
+        await Assert.That(result.Error!.Code).IsEqualTo(IDeadLetterAdministration.QueueNotFoundCode);
+    }
+
+    [Test]
+    public async Task Requeue_waits_in_the_wait_queue_without_consuming_attempts_or_hitting_the_dlq()
+    {
+        // Regressão M4: Requeue fazia NACK com requeue, reentregava na hora e a quorum mandava para a DLQ pelo x-delivery-limit
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"])
+        {
+            RetryDelays = [TimeSpan.FromSeconds(1)],
+            DeliveryLimit = 2,
+        });
+        var requeues = 0;
+        broker.Probe.Behavior = _ => Interlocked.Increment(ref requeues) <= 4 ? ConsumeResult.Requeue("dependência fora") : ConsumeResult.Completed;
+
+        await broker.PublishAsync(Envelope());
+
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 5, TimeSpan.FromSeconds(30))).IsTrue();
+        var received = broker.Probe.Received.Select(r => r.Message).ToList();
+        await Assert.That(received.All(m => m.PreviousFailures == 0)).IsTrue();
+        await Assert.That(await broker.CountAsync(broker.Queue.DeadLetterQueue)).IsEqualTo(0u);
+    }
+
+    [Test]
+    public async Task Shutdown_drains_the_handler_in_progress_and_acks_it()
+    {
+        // Regressão B4: o desligamento cancelava o handler na hora e devolvia a mensagem com NACK
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]));
+        var finished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        broker.Probe.AsyncBehavior = async (_, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            finished.TrySetResult(!ct.IsCancellationRequested);
+            return ConsumeResult.Completed;
+        };
+
+        await broker.PublishAsync(Envelope());
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 1, TimeSpan.FromSeconds(20))).IsTrue();
+        await broker.StopAsync();
+
+        await Assert.That(finished.Task.IsCompletedSuccessfully && finished.Task.Result).IsTrue();
+        await Assert.That(await broker.CountAsync(broker.Queue.Name)).IsEqualTo(0u);
+    }
+
+    [Test]
+    public async Task Publisher_does_not_depend_on_the_topology_of_a_broken_consumer()
+    {
+        // Regressão M5: um PRECONDITION_FAILED na fila de um consumidor impedia toda publicação do processo
+        var uri = TestSettings.RabbitUri;
+        Skip.When(uri is null, $"Sem RabbitMQ de testes: defina {TestSettings.RabbitVariable} (ou TecTestes:MessagingRabbitUri no user-secrets).");
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var exchange = $"tec-testes.{suffix}";
+        var queue = new QueueDefinition($"tec-testes.{suffix}", ["pedido-aprovado"]) { DeliveryLimit = 7 };
+
+        // A fila já existe com outro x-delivery-limit: a declaração do consumidor é recusada
+        var factory = new ConnectionFactory { Uri = new Uri(uri!) };
+        await using var connection = await factory.CreateConnectionAsync();
+        await using (var setup = await connection.CreateChannelAsync())
+        {
+            await setup.QueueDeclareAsync(queue.Name, durable: true, exclusive: false, autoDelete: false,
+                arguments: new Dictionary<string, object?> { ["x-queue-type"] = "quorum", ["x-delivery-limit"] = 3 });
+        }
+
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+        builder.Logging.SetMinimumLevel(LogLevel.Critical);
+        builder.Services.AddTecVault(v => v.UseInMemory(o => o.InitialSecrets["rabbitmq"] = uri!));
+        builder.Services.AddSingleton(sp => new ProbeConsumer(sp.GetRequiredService<RabbitMqConsumerDependencies>(), new Probe(), queue));
+        builder.Services.AddTecMessaging()
+            .UseRabbitMq(o =>
+            {
+                o.Exchange = exchange;
+                o.DeadLetterMonitorInterval = TimeSpan.Zero;
+            })
+            .AddConsumer<ProbeConsumer>();
+        using var host = builder.Build();
+        try
+        {
+            await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(Envelope(), CancellationToken.None);
+        }
+        finally
+        {
+            await using var cleanup = await connection.CreateChannelAsync();
+            await cleanup.QueueDeleteAsync(queue.Name);
+            await cleanup.QueueDeleteAsync(queue.DeadLetterQueue);
+            foreach (var delay in queue.RetryDelays.Distinct())
+                await cleanup.QueueDeleteAsync(queue.RetryQueue(delay));
+            await cleanup.ExchangeDeleteAsync(exchange);
+        }
+    }
+}

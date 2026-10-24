@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Configurações de build, segurança e metadados comuns: ..\Directory.Build.props -->
+
+  <PropertyGroup>
+    <RootNamespace>TEC.Messaging.Aws</RootNamespace>
+    <Description>Transporte AWS (SQS e SNS) do TEC.Messaging: publicação em tópicos SNS e filas SQS, consumidores com long polling e retentativa escalonada, DLQ nativa e segredos integrados ao TEC.Vault.</Description>
+    <PackageTags>messaging;aws;sqs;sns;cloud;retry;dead-letter;vault;opentelemetry;tec</PackageTags>
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+    <!--
+      AWSSDK utiliza reflexão interna no pipeline de serialização HTTP; desativado AOT no satélite.
+    -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.SQS" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" />
+    <PackageReference Include="Polly.Core" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+
+  <!--
+    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
+    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
+  -->
+  <ItemGroup>
+    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />
+    <TecReference Include="TEC.Vault" />
+  </ItemGroup>
+
+</Project>
