@@ -395,7 +395,7 @@
         "type": "CentralTransitive",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "t73JcW3viVH3wMr6MXJGxkhN70fFcDkqi94psK6oI6QdnqY/jSnL266lI28jB+FNSqRXqQb4xCTNCt3Mku/K4A==",
+        "contentHash": "L9gbO8YRbv9EY0e7FyMho3Mkodq8SwBxfPk68B4QQ401PZSOeGy7V0X7IHI8o48qAbaBcJiaOa3DTdHDZn7g9A==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
         }
@@ -809,7 +809,7 @@
         "type": "CentralTransitive",
         "requested": "[0.0.1, )",
         "resolved": "0.0.1",
-        "contentHash": "t73JcW3viVH3wMr6MXJGxkhN70fFcDkqi94psK6oI6QdnqY/jSnL266lI28jB+FNSqRXqQb4xCTNCt3Mku/K4A==",
+        "contentHash": "L9gbO8YRbv9EY0e7FyMho3Mkodq8SwBxfPk68B4QQ401PZSOeGy7V0X7IHI8o48qAbaBcJiaOa3DTdHDZn7g9A==",
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.2"
         }
