@@ -17,8 +17,8 @@
 
   <!-- Terceiros -->
   <ItemGroup>
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.185" />
-    <PackageVersion Include="AWSSDK.SQS" Version="3.7.400.185" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.502.61" />
+    <PackageVersion Include="AWSSDK.SQS" Version="3.7.502.57" />
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
@@ -43,7 +43,7 @@
 
   <!-- EF Core e Npgsql acompanham o .NET 10 (LTS), único alvo dos pacotes -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />

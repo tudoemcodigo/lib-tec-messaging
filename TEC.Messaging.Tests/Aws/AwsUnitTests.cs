@@ -274,6 +274,8 @@ public class AwsUnitTests
     public async Task Valid_message_is_read_with_invariant_parsing_and_utc_instant()
     {
         var id = Guid.NewGuid();
+        // Sem ICU (DOTNET_SYSTEM_GLOBALIZATION_INVARIANT) só existe a cultura invariante: o cenário não se aplica
+        Skip.When(CultureInfo.GetCultures(CultureTypes.SpecificCultures).Length <= 1, "Sem ICU: só a cultura invariante.");
         var previous = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = new CultureInfo("ar-SA");
         try

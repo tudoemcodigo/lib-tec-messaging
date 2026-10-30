@@ -4,13 +4,13 @@
     "net10.0": {
       "Microsoft.EntityFrameworkCore.InMemory": {
         "type": "Direct",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "zpyIER4WRE4wslktQWBi6aD2DbX6AwOVmMar5yO0tbswQ/vh772Ot2j+1f0/1Nxk98WSRmssLQhRpxWZPk7g+w==",
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "A63iVWLSlVPjzNrbgHIrMBF/z9cEJgxNmYbDu1TzUIc5yhcAoVIfFJ94ev3L4lQ1Kd43wJUtZ0bqy1vs6iCDJQ==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "10.0.12",
-          "Microsoft.Extensions.Caching.Memory": "10.0.12",
-          "Microsoft.Extensions.Logging": "10.0.12"
+          "Microsoft.EntityFrameworkCore": "10.0.13",
+          "Microsoft.Extensions.Caching.Memory": "10.0.13",
+          "Microsoft.Extensions.Logging": "10.0.13"
         }
       },
       "Microsoft.Extensions.Configuration.Json": {
@@ -118,8 +118,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "3.7.402.91",
-        "contentHash": "B0oP+hfVhLacXwqVOcCAcFj44wEYdfzX3fF0CSEDw8hoiLAyyDyjHtbTrqqtyiwW3fyTOrvrKfgPHOejGBu7gw=="
+        "resolved": "3.7.501.1",
+        "contentHash": "VZR0LRAawpn5FQwXNPzhOO8DHhfffhBSvcSZT1d0ctcZ+kmsz3tzTArZnTQ9Haf/TNEqNLzKupHfjV2ndWAL4A=="
       },
       "Azure.Core": {
         "type": "Transitive",
@@ -200,24 +200,24 @@
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "e7OrVN8U5yr4kuwdTHWBHGVQIVsGfMkAr0Ej1/BnrS989Q0XBVANpIzNZ2bc1GvMZ0/XwMt5InTnmKskxGy99Q==",
+        "resolved": "10.0.13",
+        "contentHash": "u/z4nTQUJ5nJEXAQekgQEQZkh0delp4gL+ESHn7Z6k037c8HC5mSNu1/YdBgxGm7DtLjhOxktNl+aQMzw6wN7A==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.12",
-          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.12",
-          "Microsoft.Extensions.Caching.Memory": "10.0.12",
-          "Microsoft.Extensions.Logging": "10.0.12"
+          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.13",
+          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.13",
+          "Microsoft.Extensions.Caching.Memory": "10.0.13",
+          "Microsoft.Extensions.Logging": "10.0.13"
         }
       },
       "Microsoft.EntityFrameworkCore.Abstractions": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "kDrux7T6C3V/YYYe2LXr7x6AEsVyq5Y2YoTE9er1SwbDtap3z1g8RgxNh5eKQVyB4T+DKvBBJ4Ezd/VZzJQJZg=="
+        "resolved": "10.0.13",
+        "contentHash": "ARw+tZ3eiTosnK5nJPUGEzeUQcjyqCqs3qKA3lPtIRH5yJo3qIgxm7AvkZVIT9iWkS2083UsWe3Rj1MysW3p5A=="
       },
       "Microsoft.EntityFrameworkCore.Analyzers": {
         "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "Kd4o2oO1A6dfKxjz5LS16QyLtpCFTUiFWwmBABETAXRsSImBdRdWeKjSgbbRhAMiV3a3/nWr95ZtzClT4uaADQ=="
+        "resolved": "10.0.13",
+        "contentHash": "zBx6VeEz/hkhlm0BJ2V+9xebUuDDIszcKvurJceQHuZPEXuXubrL6Lneo9VZiliRyJbQlB2oNKLkJXd3gHteQA=="
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "Transitive",
@@ -605,8 +605,8 @@
       "tec.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[3.7.400.185, )",
-          "AWSSDK.SimpleNotificationService": "[3.7.400.185, )",
+          "AWSSDK.SQS": "[3.7.502.57, )",
+          "AWSSDK.SimpleNotificationService": "[3.7.502.61, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.13, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
@@ -653,20 +653,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[3.7.400.185, )",
-        "resolved": "3.7.400.185",
-        "contentHash": "DeaBKM7USpu2p1vZ7lHY5Uk4hN7w8uv24+ZzRyjyWlfHLAawUrdHtX+JCUrfWiW1A+fjXV8SuHttrOa+iaVq9w==",
+        "requested": "[3.7.502.61, )",
+        "resolved": "3.7.502.61",
+        "contentHash": "DtLzH/lqMceu1OLVr+KggET3X95YBcMmYTaW/jqmqbqzUcHDlWr40WiNSboBLsWeZfkvVvK86pcdM0dCpi8Kbw==",
         "dependencies": {
-          "AWSSDK.Core": "[3.7.402.91, 4.0.0)"
+          "AWSSDK.Core": "[3.7.501.1, 4.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "CentralTransitive",
-        "requested": "[3.7.400.185, )",
-        "resolved": "3.7.400.185",
-        "contentHash": "waPdK3CccfVX+Y8ze8OFKSYsufiLDAOFn2GiQelN8Hzw9iSnoJOXwhU5TVd1VvaPWT273hT3yG1RUHqBeubhEQ==",
+        "requested": "[3.7.502.57, )",
+        "resolved": "3.7.502.57",
+        "contentHash": "YddlhksnZgglS5inCPYkOngObFH5ruis4toMJ+2V2adj8P2+b4FTVDbcShkcACk37NggNu5zIirklB+XY5sZIA==",
         "dependencies": {
-          "AWSSDK.Core": "[3.7.402.90, 4.0.0)"
+          "AWSSDK.Core": "[3.7.501.1, 4.0.0)"
         }
       },
       "Azure.Messaging.ServiceBus": {
