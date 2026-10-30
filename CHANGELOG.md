@@ -72,6 +72,7 @@ Versão inaugural oficial do **TEC.Messaging** no ecossistema TEC, unificando me
 - Sem dependência de `Polly.Core`.
 
 #### 🟧 TEC.Messaging.Aws
+- AWS SDK for .NET v4 (`AWSSDK.SQS` e `AWSSDK.SimpleNotificationService` 4.0): coleções das respostas podem vir `null` e são tratadas assim; a cadeia de credenciais do ambiente vem do `DefaultAWSCredentialsIdentityResolver`; o modo de retentativa padrão do SDK é `Standard`.
 - Publicador com suporte inteligente a envio para Tópicos SNS (Publish / Fan-out) e Filas SQS (Direct Send).
 - Consumidor assíncrono para Filas SQS com suporte a Long Polling (`WaitTimeSeconds = 20`) e concorrência paralela configurável (`SemaphoreSlim`).
 - Dead-Letter Queue pela `RedrivePolicy` nativa do SQS e exclusão da mensagem (`DeleteMessage`) após o processamento.

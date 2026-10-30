@@ -1,5 +1,6 @@
 using Amazon;
 using Amazon.Runtime;
+using Amazon.Runtime.Credentials;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Microsoft.Extensions.Options;
@@ -129,13 +130,13 @@ internal sealed class AwsClientFactory(ISecretReader vault, IOptions<AwsMessagin
             if (TryParseCredentials(secret.Value.Value, out var parsed))
                 return parsed;
             if (settings.UseAmbientCredentials)
-                return FallbackCredentialsFactory.GetCredentials();
+                return await DefaultAWSCredentialsIdentityResolver.GetCredentialsAsync().ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"O segredo '{settings.ConnectionSecretName}' do cofre não está no formato 'accessKey:secretKey' (ou 'accessKey:secretKey:sessionToken'). Para usar credenciais do ambiente, configure UseAmbientCredentials = true.");
         }
 
         if (settings.UseAmbientCredentials)
-            return FallbackCredentialsFactory.GetCredentials();
+            return await DefaultAWSCredentialsIdentityResolver.GetCredentialsAsync().ConfigureAwait(false);
 
         var code = secret.IsFailure ? secret.Error?.Code : "SEGREDO_VAZIO";
         throw new InvalidOperationException(

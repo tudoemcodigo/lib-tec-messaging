@@ -118,8 +118,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "3.7.501.1",
-        "contentHash": "VZR0LRAawpn5FQwXNPzhOO8DHhfffhBSvcSZT1d0ctcZ+kmsz3tzTArZnTQ9Haf/TNEqNLzKupHfjV2ndWAL4A=="
+        "resolved": "4.0.102.13",
+        "contentHash": "vaYs/kwfB+Lv9PeVKYE4g2mQlzVtHImXLWgfTG8UgeCybUAPkew5kwb8GS6RhuzwvImbolyLHT+IM34WoM9lJg=="
       },
       "Azure.Core": {
         "type": "Transitive",
@@ -605,8 +605,8 @@
       "tec.messaging.aws": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.SQS": "[3.7.502.57, )",
-          "AWSSDK.SimpleNotificationService": "[3.7.502.61, )",
+          "AWSSDK.SQS": "[4.0.100.20, )",
+          "AWSSDK.SimpleNotificationService": "[4.0.100.20, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.13, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.13, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.13, )",
@@ -653,20 +653,20 @@
       },
       "AWSSDK.SimpleNotificationService": {
         "type": "CentralTransitive",
-        "requested": "[3.7.502.61, )",
-        "resolved": "3.7.502.61",
-        "contentHash": "DtLzH/lqMceu1OLVr+KggET3X95YBcMmYTaW/jqmqbqzUcHDlWr40WiNSboBLsWeZfkvVvK86pcdM0dCpi8Kbw==",
+        "requested": "[4.0.100.20, )",
+        "resolved": "4.0.100.20",
+        "contentHash": "waRlkeOkn8c5rjODfc/HSpHF6JGN6/FN30PIQz9PPn0QZS+fHqGmhvigSkfDeoJXngR+r+QbgaxWobzIVkTOnQ==",
         "dependencies": {
-          "AWSSDK.Core": "[3.7.501.1, 4.0.0)"
+          "AWSSDK.Core": "[4.0.102.12, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "CentralTransitive",
-        "requested": "[3.7.502.57, )",
-        "resolved": "3.7.502.57",
-        "contentHash": "YddlhksnZgglS5inCPYkOngObFH5ruis4toMJ+2V2adj8P2+b4FTVDbcShkcACk37NggNu5zIirklB+XY5sZIA==",
+        "requested": "[4.0.100.20, )",
+        "resolved": "4.0.100.20",
+        "contentHash": "jE5HdizodnFKdUOWvfgWJwnNqkxcv0IXLclbXO569tnVbn1dMVeGiNgarwEWpjN+mu1mP2PlR2GIO07SCCJCvQ==",
         "dependencies": {
-          "AWSSDK.Core": "[3.7.501.1, 4.0.0)"
+          "AWSSDK.Core": "[4.0.102.13, 5.0.0)"
         }
       },
       "Azure.Messaging.ServiceBus": {

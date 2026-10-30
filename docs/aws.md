@@ -19,7 +19,7 @@
 
 ## 🎯 Visão geral
 
-O pacote `TEC.Messaging.Aws` (AWSSDK.SQS e AWSSDK.SimpleNotificationService 3.7) conecta o ecossistema TEC à nuvem Amazon Web Services:
+O pacote `TEC.Messaging.Aws` (AWSSDK.SQS e AWSSDK.SimpleNotificationService 4.0) conecta o ecossistema TEC à nuvem Amazon Web Services:
 
 ```mermaid
 flowchart LR
