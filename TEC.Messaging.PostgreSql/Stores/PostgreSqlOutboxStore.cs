@@ -171,9 +171,13 @@ internal sealed class PostgreSqlOutboxStore<TContext>(TContext db, TimeProvider 
             throw new ArgumentOutOfRangeException(nameof(ids), $"Informe de 1 a {MaxIds} mensagens, ou null para todas.");
 
         var now = time.GetUtcNow();
+
+        // Pendentes com reserva vigente estão em publicação: zerar a reserva deixaria outro relay publicá-las de novo. A
+        // validade é comparada pelo relógio do banco, o mesmo da reserva (DateTimeOffset.UtcNow vira now() no SQL); o relógio
+        // desta instância pode estar adiantado em relação ao banco
         var target = db.Set<OutboxMessage>()
             .Where(m => m.Status == OutboxMessageStatus.Dead
-                || (m.Status == OutboxMessageStatus.Pending && m.Attempts > 0 && (m.LeasedUntil == null || m.LeasedUntil < now)));
+                || (m.Status == OutboxMessageStatus.Pending && m.Attempts > 0 && (m.LeasedUntil == null || m.LeasedUntil < DateTimeOffset.UtcNow)));
         if (ids is not null)
         {
             var list = ids.ToList();

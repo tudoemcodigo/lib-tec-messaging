@@ -25,7 +25,7 @@ O pacote `TEC.Messaging.PostgreSql` implementa as mesmas abstrações do [🗄�
 |---|---|
 | `SELECT ... FOR UPDATE SKIP LOCKED` | Reserva de lotes sem contenção nem espera entre relays concorrentes |
 | `UPDATE ... FROM batch ... RETURNING target.*` | Reserva e leitura do lote em uma única viagem ao servidor |
-| `NOW() AT TIME ZONE 'UTC'` | Validade da reserva pelo relógio do banco |
+| `NOW()` | Validade da reserva pelo relógio do banco (`timestamptz`) |
 | Índices parciais (`WHERE "Status" = 0`, `1`, `2`) | Reserva, limpeza, estatísticas e listagem de falhas sem varrer as publicadas retidas |
 | `PostgresErrorCodes.UniqueViolation` (`23505`) | Detecção da corrida do Inbox pela chave primária |
 
@@ -37,7 +37,7 @@ O pacote `TEC.Messaging.PostgreSql` implementa as mesmas abstrações do [🗄�
 | `TecMessagingPostgreSqlSaveChangesInterceptor` | Converte eventos de domínio em linhas do Outbox no `SaveChanges` |
 | `IPostgreSqlDomainEventsSavingObserver` | Gancho para gravar dados próprios na mesma transação |
 
-O pacote não é compatível com Native AOT (`IsAotCompatible=false`). Segue o EF Core e o Npgsql EF Core 8.x no `net8.0` e o 10.x no `net10.0`.
+O pacote não é compatível com Native AOT (`IsAotCompatible=false`). Usa o EF Core e o Npgsql EF Core 10.x (alvo único `net10.0`).
 
 ---
 
@@ -91,7 +91,10 @@ catch (DbUpdateException ex) when (inbox.IsDuplicate(ex)) { return ConsumeResult
 Os fluxos estão em [📤 Outbox](outbox.md) e [📥 Inbox](inbox.md).
 
 > [!WARNING]
-> O pacote do PostgreSQL não tem a extensão `AddDomainEventsObserver` do SQL Server, e a suíte de testes só cobre o mapeamento do modelo (`PostgreSqlUnitTests`): não há teste que resolva `UsePostgreSql<TContext>()` pelo container nem integração com um PostgreSQL real. Valide o registro do interceptor na sua aplicação antes de produção (ver [🔍 Revisão técnica](revisao-tecnica.md#-complemento-da-revisão-documental--2026-10-24)).
+> O pacote do PostgreSQL não tem a extensão `AddDomainEventsObserver` do SQL Server: para usar um `IPostgreSqlDomainEventsSavingObserver`, registre-o você mesmo (`services.AddSingleton<IPostgreSqlDomainEventsSavingObserver, MeuObservador>()`); o interceptor recebe todos os registrados. A suíte cobre o mapeamento do modelo (`PostgreSqlUnitTests`) e a resolução do interceptor pelo container (`MessagingIssueRegressionTests`), mas não há integração com um PostgreSQL real: a reserva com `SKIP LOCKED` nunca rodou contra um servidor nos testes. Valide-a na sua aplicação antes de produção (ver [🔍 Revisão técnica](revisao-tecnica.md#-complemento-da-revisão-documental--2026-10-24)).
+
+> [!NOTE]
+> O `DateTimeOffset` gravado em colunas `timestamptz` precisa ter deslocamento zero (UTC): o Npgsql recusa outros deslocamentos. O pacote converte para UTC o `OccurredAt` do evento (na fábrica de envelopes e de novo ao montar a linha) e o `NextAttemptAt`, então um `IDomainEvent.OccurredAt` com fuso (ex.: `-03:00`) é gravado como o mesmo instante em UTC. Colunas `DateTimeOffset` das suas próprias entidades continuam sujeitas à regra do Npgsql.
 
 ---
 
@@ -135,13 +138,13 @@ A reserva é um único `UPDATE` sobre uma CTE com `SKIP LOCKED`:
 WITH batch AS (
     SELECT "Id" FROM "vendas"."outbox_messages"
     WHERE "Status" = 0 AND "NextAttemptAt" <= @now
-        AND ("LeasedUntil" IS NULL OR "LeasedUntil" < (NOW() AT TIME ZONE 'UTC'))
+        AND ("LeasedUntil" IS NULL OR "LeasedUntil" < NOW())
     ORDER BY "OccurredAt", "Id"
     LIMIT @batchSize
     FOR UPDATE SKIP LOCKED)
 UPDATE "vendas"."outbox_messages" AS target
 SET "LeaseToken" = @token,
-    "LeasedUntil" = (NOW() AT TIME ZONE 'UTC') + (@leaseSeconds * interval '1 second')
+    "LeasedUntil" = NOW() + (@leaseSeconds * interval '1 second')
 FROM batch
 WHERE target."Id" = batch."Id"
 RETURNING target.*;
@@ -152,9 +155,9 @@ RETURNING target.*;
 | Dois relays não reservam a mesma mensagem | `FOR UPDATE SKIP LOCKED`: o PostgreSQL pula as linhas travadas por outro relay e entrega as seguintes, sem enfileirar transações nem gerar deadlocks |
 | A reserva sobrevive à transação | `LeaseToken` e `LeasedUntil` ficam gravados; a publicação acontece **fora** de transação |
 | Conclusão só por quem reservou | `CompleteAsync` atualiza com `LeaseToken = @token`; reserva assumida por outro relay torna a conclusão inócua |
-| Administração não desfaz reserva ativa | `RequeueAsync` só devolve mortas e pendentes com erro sem reserva vigente |
+| Administração não desfaz reserva ativa | `RequeueAsync` só devolve mortas e pendentes com erro sem reserva vigente, comparando `LeasedUntil` com `now()` do banco, o mesmo relógio da reserva |
 
-A conclusão, as estatísticas, a listagem de falhas, o reprocessamento e o descarte têm a mesma semântica do [SQL Server](sqlserver.md#-concorrência-e-locks) (mesmos limites: 1 a 1000 ids, `batchSize` 1 a 1000). A limpeza apaga em lotes com `DELETE ... WHERE "Id" IN (SELECT ... LIMIT @max)`.
+A conclusão, as estatísticas, a listagem de falhas, o reprocessamento e o descarte têm a mesma semântica do [SQL Server](sqlserver.md#-concorrência-e-locks) (mesmos limites: 1 a 1000 ids, `batchSize` 1 a 1000). A limpeza do Outbox apaga em lotes com `DELETE ... WHERE "Id" IN (SELECT ... LIMIT @max)`. A do Inbox apaga pela chave inteira, `WHERE ("MessageId", "Consumer") IN (SELECT "MessageId", "Consumer" ... LIMIT @max)`: o registro vencido de um consumidor não leva junto o de outro consumidor para a mesma mensagem.
 
 ---
 
@@ -174,7 +177,7 @@ O pacote não tem classe de opções própria: as do relay estão em [📤 Outbo
 
 | Código / exceção | Causa | Tratamento |
 |---|---|---|
-| `23505` (`unique_violation`) na constraint do Inbox | Mensagem já processada por outra entrega concorrente | `IInboxStore.IsDuplicate(ex)` devolve `true` só para a chave primária do Inbox; encerre como `Completed` |
+| `23505` (`unique_violation`) na constraint do Inbox | Mensagem já processada por outra entrega concorrente | `IInboxStore.IsDuplicate(ex)` devolve `true` só para a chave primária do Inbox; encerre como `Completed`. Sem o Inbox no modelo, nenhuma violação conta como duplicata (mesma regra do SQL Server) |
 | `InvalidOperationException: OutboxMessage não está no modelo de ...` | Faltou `modelBuilder.AddTecMessagingPostgreSql()` | Chame no `OnModelCreating` e gere a migration |
 | `42P01` (`relation does not exist`) | Tabelas da mensageria não criadas | Gere e aplique a migration com `AddTecMessagingPostgreSql()` |
 | `ArgumentOutOfRangeException` em `RequeueAsync`/`DiscardAsync` | Coleção vazia ou com mais de 1000 ids | Envie de 1 a 1000 ids (`null` em `RequeueAsync` = todas) |

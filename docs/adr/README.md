@@ -27,6 +27,7 @@ O objetivo destes registros é documentar de forma clara, contextualizada e just
 | [0006](0006-sanitizacao-de-pii-e-credenciais-em-erros-logs-e-cabecalhos.md) | **Sanitização de PII e Credenciais em Erros, Logs e Cabeçalhos** | Aprovado | 2026-10-24 | `SensitiveDataSanitizer` mascara CPF, CNPJ, cartão, senhas e tokens no que é gravado e registrado (LGPD); entradas externas validadas. |
 | [0007](0007-retry-escalonado-e-dlq-no-rabbitmq-com-filas-de-espera.md) | **Retry Escalonado e DLQ no RabbitMQ com Filas de Espera** | Aprovado | 2026-10-24 | Filas quorum, filas de espera por TTL e DLQ na topologia do broker: sem espera em memória e sem laço de reentrega. |
 | [0008](0008-nucleo-agnostico-com-bancos-e-brokers-em-pacotes-satelites.md) | **Núcleo Agnóstico com Bancos e Brokers em Pacotes Satélites** | Aprovado | 2026-10-24 | Núcleo sem banco nem broker, compatível com Native AOT; SQL Server, PostgreSQL, RabbitMQ, Azure Service Bus e AWS em pacotes à parte. |
+| [0009](0009-reenvio-agendado-no-azure-service-bus-e-rotacao-de-credenciais.md) | **Reenvio Agendado no Azure Service Bus, Rotação de Credenciais e TLS Obrigatório** | Aprovado | 2026-10-29 | Retry com `ScheduledEnqueueTime` (agenda antes de concluir; duplicidade em vez de perda), clientes recriados com single-flight quando a credencial é recusada, `RequireTls` fora de Development. |
 
 ---
 

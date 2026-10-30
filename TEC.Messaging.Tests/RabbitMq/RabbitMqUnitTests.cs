@@ -42,11 +42,15 @@ public class RabbitMqUnitTests
     // Endereço não roteável: a conexão fica pendurada (broker que não responde)
     private const string BlackholeUri = "amqp://guest:guest@10.255.255.1:5672/";
 
-    internal static IHost Build(string uri, Action<RabbitMqOptions>? configure = null)
+    internal static IHost Build(string uri, Action<RabbitMqOptions>? configure = null, string environment = "Development")
     {
-        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = Environments.Development });
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = environment });
         builder.Logging.ClearProviders();
-        builder.Services.AddTecVault(v => v.UseInMemory(o => o.InitialSecrets["rabbitmq"] = uri));
+        builder.Services.AddTecVault(v => v.UseInMemory(o =>
+        {
+            o.AllowOutsideDevelopment = true;
+            o.InitialSecrets["rabbitmq"] = uri;
+        }));
         builder.Services.AddTecMessaging().UseRabbitMq(o =>
         {
             o.Exchange = "tec-testes.unitarios";
@@ -86,6 +90,43 @@ public class RabbitMqUnitTests
 
         var open = await Assert.That(async () => await publisher.PublishAsync(Envelope(), CancellationToken.None)).Throws<RabbitMqCircuitOpenException>();
         await Assert.That(open).IsAssignableTo<ITransportUnavailableException>();
+    }
+
+    [Test]
+    public async Task Plain_amqp_is_refused_outside_development_without_touching_the_broker()
+    {
+        using var host = Build(UnreachableUri, environment: Environments.Production);
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
+
+        var failure = await Assert.That(async () => await publisher.PublishAsync(Envelope(), CancellationToken.None)).Throws<RabbitMqUnavailableException>();
+
+        // A recusa vem da URI, antes de qualquer conexão; a mensagem não repete a URI (com usuário e senha)
+        await Assert.That(failure!.InnerException).IsTypeOf<InvalidOperationException>();
+        await Assert.That(failure.InnerException!.Message).Contains("TLS");
+        await Assert.That(failure.InnerException.Message).DoesNotContain("guest");
+    }
+
+    [Test]
+    public async Task Explicit_require_tls_refuses_plain_amqp_even_in_development()
+    {
+        using var host = Build(UnreachableUri, o => o.RequireTls = true);
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
+
+        var failure = await Assert.That(async () => await publisher.PublishAsync(Envelope(), CancellationToken.None)).Throws<RabbitMqUnavailableException>();
+
+        await Assert.That(failure!.InnerException!.Message).Contains("TLS");
+    }
+
+    [Test]
+    public async Task Tls_requirement_can_be_disabled_explicitly()
+    {
+        // Com RequireTls = false a URI passa pela checagem e a falha é a do broker inalcançável (conexão recusada)
+        using var host = Build(UnreachableUri, o => o.RequireTls = false, Environments.Production);
+        var publisher = host.Services.GetRequiredService<IMessagePublisher>();
+
+        var failure = await Assert.That(async () => await publisher.PublishAsync(Envelope(), CancellationToken.None)).Throws<RabbitMqUnavailableException>();
+
+        await Assert.That(failure!.InnerException!.Message).DoesNotContain("TLS");
     }
 
     [Test]

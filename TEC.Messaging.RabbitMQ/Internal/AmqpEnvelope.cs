@@ -110,7 +110,7 @@ internal static class AmqpEnvelope
             }
 
             var version = root.TryGetProperty("version", out var v) && v.TryGetInt32(out var number) && number >= 1 ? number : 1;
-            var occurred = root.TryGetProperty("occurredAt", out var o) && o.TryGetDateTimeOffset(out var when) ? when : DateTimeOffset.MinValue;
+            var occurred = root.TryGetProperty("occurredAt", out var o) && o.TryGetDateTimeOffset(out var when) ? when.ToUniversalTime() : DateTimeOffset.MinValue;
             var payload = root.TryGetProperty("payload", out var p) ? p.GetRawText() : "{}";
             if (payload.Length > maxPayloadLength)
             {

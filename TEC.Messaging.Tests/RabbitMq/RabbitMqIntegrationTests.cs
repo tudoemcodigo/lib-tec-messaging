@@ -102,7 +102,7 @@ public class RabbitMqIntegrationTests
                 .AddConsumer<ProbeConsumer>();
             var host = builder.Build();
             await host.StartAsync();
-            // O consumidor declara fila e ligação em segundo plano: publicar antes disso descartaria a mensagem (mandatory=false)
+            // O consumidor declara fila e ligação em segundo plano: publicar antes disso devolveria a mensagem (mandatory)
             await WaitForConsumerAsync(uri!, queue.Name);
             return new Broker(host, uri!, exchange, queue, probe);
         }
@@ -181,6 +181,23 @@ public class RabbitMqIntegrationTests
         await Assert.That(correlation).IsEqualTo("corr-integracao");
         await Assert.That(causation).IsEqualTo(envelope.MessageId.ToString());
         await Assert.That(message.PreviousFailures).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Message_without_a_bound_queue_is_returned_as_unroutable()
+    {
+        // Publicação mandatory: tipo sem ligação na exchange volta do broker em vez de sumir com confirmação positiva
+        await using var broker = await Broker.StartAsync(name => new QueueDefinition(name, ["pedido-aprovado"]));
+        var orphan = Envelope() with { Type = "testes.evento-sem-fila" };
+
+        var failure = await Assert.That(async () => await broker.PublishAsync(orphan)).Throws<RabbitMqUnroutableException>();
+
+        await Assert.That((object?)failure is ITransportUnavailableException).IsFalse();
+        await Assert.That(failure!.Message).Contains("evento-sem-fila");
+
+        // O canal segue utilizável depois do basic.return
+        await broker.PublishAsync(Envelope());
+        await Assert.That(await broker.Probe.WaitAsync(n => n >= 1, TimeSpan.FromSeconds(20))).IsTrue();
     }
 
     [Test]
@@ -309,7 +326,11 @@ public class RabbitMqIntegrationTests
         using var host = builder.Build();
         try
         {
-            await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(Envelope(), CancellationToken.None);
+            // A publicação chega ao broker apesar da fila recusada. Sem ligação válida para a routing key, o broker a devolve
+            // (mandatory): falha de roteamento, que conta tentativa, e não transporte indisponível
+            var returned = await Assert.That(async () => await host.Services.GetRequiredService<IMessagePublisher>().PublishAsync(Envelope(), CancellationToken.None))
+                .Throws<RabbitMqUnroutableException>();
+            await Assert.That((object?)returned is ITransportUnavailableException).IsFalse();
         }
         finally
         {

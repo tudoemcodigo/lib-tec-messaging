@@ -521,6 +521,20 @@ Conferência de toda a documentação contra o código atual (`0.0.1`), que cobr
 | C8 | Baixa | `AwsSqsConsumer.cs:156-166` | `Reject` e `Requeue` usam o mesmo `ChangeMessageVisibility(0)`: sem `RedrivePolicy` na fila a mensagem rejeitada reaparece sem parar, e com `Requeue` o retorno é imediato (laço) |
 | C9 | Info | `TEC.Messaging.Aws.csproj:19` · `TEC.Messaging.AzureServiceBus.csproj:18` | `Polly.Core` é referenciado mas não é usado no código dos dois satélites |
 
+**Reconferência em 2026-10-29 (leitura do código, sem executar testes).** O código mudou depois da tabela acima; estado atual de cada suspeita:
+
+| ID | Estado | Observação |
+|---|---|---|
+| C1 | Resolvido no código | O interceptor do PostgreSQL passou a ser registrado por fábrica e há teste de resolução (`MessagingIssueRegressionTests`). Segue sem extensão `AddDomainEventsObserver` e sem integração com PostgreSQL real |
+| C2 | Resolvido, com outra divergência | A reserva usa `NOW()` (`timestamptz`). Em compensação, `PostgreSqlOutboxStore.RequeueAsync` compara `LeasedUntil` com o relógio da aplicação, ao contrário do SQL Server |
+| C3 | Resolvido, com efeito colateral | As exceções do Azure e da AWS implementam `ITransportUnavailableException`, mas por serem usadas para toda falha do SDK, uma mensagem recusada nunca conta tentativa e bloqueia o Outbox (ver [ADR 0003](adr/0003-falhas-isoladas-backoff-e-transporte-indisponivel-sem-contar-tentativa.md)) |
+| C4 | Aberto só na AWS | `AwsSqsConsumer` ainda chama `GetSqsAsync` fora do `try`; o consumidor do Azure agora tenta de novo a cada 5 s |
+| C5 | Aberto | Sem log das exceções do handler, sem métricas de consumo, sem `MaxPayloadLength` nem `Validate`, e `Enabled` ignorado nos dois consumidores |
+| C6 | Resolvido | Os dois consumidores leem `occurred-at`/`occurredAt` antes de usar o horário de recebimento |
+| C7 | Aberto | Sem validação de `DefaultDestination` na subida |
+| C8 | Aberto | `Reject` e `Requeue` seguem iguais na AWS |
+| C9 | Aberto | `Polly.Core` segue referenciado e sem uso no Azure e na AWS |
+
 Também observado e já corrigido na documentação (não é defeito do código): nomes e padrões de API divergentes em `docs/aws.md` e `docs/azureservicebus.md` (`UseAwsMessaging`, `AddConsumer`, `AddTecAwsMessaging`, `CredentialsSecretName`, `MaxConcurrency`, `AwsSqsQueueDefinition`, `TopicOrQueuePrefix`, `AzureServiceBusSubscription` não existem), `docs/postgresql.md` (a extensão que liga o interceptor é `UseTecMessagingPostgreSql`; o SQL de reserva e os nomes dos índices estavam diferentes do código) e o texto de mascaramento do sanitizador (`***REDACTED***`, não `[REDACTED]`).
 
 ---

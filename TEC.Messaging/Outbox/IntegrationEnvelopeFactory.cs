@@ -38,7 +38,7 @@ public sealed class IntegrationEnvelopeFactory
 
     /// <summary>Envelopes dos eventos de integração gerados por um evento de domínio.</summary>
     /// <param name="domainEvent">Evento de domínio.</param>
-    /// <returns>Zero ou mais envelopes, com o <see cref="IDomainEvent.OccurredAt"/> do evento.</returns>
+    /// <returns>Zero ou mais envelopes, com o <see cref="IDomainEvent.OccurredAt"/> do evento convertido para UTC.</returns>
     /// <exception cref="InvalidOperationException">Um mapeador devolveu um tipo não registrado ou o envelope é inválido.</exception>
     public IReadOnlyList<MessageEnvelope> FromDomainEvent(IDomainEvent domainEvent)
     {
@@ -55,12 +55,16 @@ public sealed class IntegrationEnvelopeFactory
 
     /// <summary>Envelope de um evento de integração.</summary>
     /// <param name="integrationEvent">Evento de um contrato registrado.</param>
-    /// <param name="occurredAt">Quando ocorreu.</param>
+    /// <param name="occurredAt">Quando ocorreu (gravado em UTC, qualquer que seja o fuso informado).</param>
     /// <returns>O envelope, com id UUIDv7, correlação, causa e trace do fluxo atual.</returns>
     /// <exception cref="InvalidOperationException">O tipo não está registrado ou o envelope é inválido (ex.: payload grande demais).</exception>
     public MessageEnvelope Create(object integrationEvent, DateTimeOffset occurredAt)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
+
+        // Sempre UTC: o mesmo instante com fusos diferentes ordenaria e serializaria de formas diferentes, e o Npgsql recusa
+        // DateTimeOffset com deslocamento diferente de zero em colunas timestamptz
+        occurredAt = occurredAt.ToUniversalTime();
         if (!_registry.TryGet(integrationEvent.GetType(), out var info))
         {
             throw new InvalidOperationException(

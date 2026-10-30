@@ -9,7 +9,9 @@ namespace TEC.Messaging;
 /// <param name="MessageId">Identificador único da mensagem (chave da idempotência no consumidor).</param>
 /// <param name="Type">Nome estável do contrato (ex.: <c>vendas.pedido-aprovado</c>), ver <see cref="Contracts.IntegrationEventAttribute"/>.</param>
 /// <param name="Version">Versão do contrato (1 ou mais).</param>
-/// <param name="OccurredAt">Instante em que o fato ocorreu.</param>
+/// <param name="OccurredAt">
+/// Instante em que o fato ocorreu. A fábrica de envelopes e os consumidores dos transportes o entregam em UTC.
+/// </param>
 /// <param name="CorrelationId">Correlação do fluxo de negócio (a mesma em todas as mensagens geradas por uma ação).</param>
 /// <param name="CausationId">Mensagem que causou esta (o <see cref="MessageId"/> da mensagem consumida que a gerou).</param>
 /// <param name="TraceParent">Contexto W3C (<c>traceparent</c>) para continuar o trace no consumidor.</param>

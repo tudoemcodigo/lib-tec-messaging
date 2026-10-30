@@ -46,7 +46,7 @@ flowchart LR
 | Índices filtrados (`Status = 0`, `1`, `2`) | Reserva, limpeza, estatísticas e listagem de falhas sem varrer as publicadas retidas |
 | `SqlException` número `2627` | Reconhece a chave duplicada do Inbox (corrida entre entregas da mesma mensagem) |
 
-O pacote não é compatível com Native AOT (`IsAotCompatible=false`): o EF Core usa modelo dinâmico e expressões compiladas. Segue o EF Core 8.x no `net8.0` e o 10.x no `net10.0`.
+O pacote não é compatível com Native AOT (`IsAotCompatible=false`): o EF Core usa modelo dinâmico e expressões compiladas. Usa o EF Core 10.x (alvo único `net10.0`).
 
 ---
 
@@ -183,7 +183,7 @@ OUTPUT inserted.*;
 |---|---|
 | Dois relays não reservam a mesma mensagem | `UPDLOCK` + `READPAST`: cada um trava só as linhas que reserva e pula as travadas pelo outro |
 | A reserva sobrevive à transação | `LeaseToken` e `LeasedUntil` ficam gravados; a publicação acontece **fora** de qualquer transação |
-| Relógios divergentes não duplicam | A validade (`LeasedUntil`) é gravada e comparada pelo relógio do banco (`SYSUTCDATETIME`). Só `NextAttemptAt` usa o relógio da aplicação |
+| Relógios divergentes não duplicam | A validade (`LeasedUntil`) é gravada e comparada pelo relógio do banco (`SYSUTCDATETIME`). Usam o relógio da aplicação (`TimeProvider`) o `NextAttemptAt`, o `PublishedAt`, o `ProcessedAt` do Inbox e o corte das limpezas (`@before`), que chega pronto ao `DELETE`. Uma instância com relógio adiantado pode apagar antes da hora |
 | Conclusão só por quem reservou | `CompleteAsync` atualiza com `WHERE LeaseToken = @token`; se outra reserva assumiu a mensagem, a conclusão é ignorada |
 | Administração não desfaz reserva ativa | `RequeueAsync` ignora pendentes com `LeasedUntil` ainda válido (relógio do banco) |
 

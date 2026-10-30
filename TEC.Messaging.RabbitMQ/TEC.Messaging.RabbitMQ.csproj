@@ -18,14 +18,6 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
 
-  <!--
-    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
-    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
-  -->
-  <ItemGroup>
-    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
-  </ItemGroup>
-
   <!-- Conexão: URI AMQP lida de um segredo do TEC.Vault, nunca da configuração -->
   <ItemGroup>
     <ProjectReference Include="..\TEC.Messaging\TEC.Messaging.csproj" />

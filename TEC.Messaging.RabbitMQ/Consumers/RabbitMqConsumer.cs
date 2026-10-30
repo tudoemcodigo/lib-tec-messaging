@@ -50,6 +50,9 @@ public sealed class RabbitMqConsumerDependencies
 /// conexão sozinho em caso de queda.
 /// </summary>
 /// <example>
+/// A ligação usa a routing key, que é o tipo da mensagem sem <see cref="RabbitMqOptions.RoutingKeyPrefixToRemove"/>. Com
+/// <c>o.RoutingKeyPrefixToRemove = "vendas."</c> no <c>UseRabbitMq</c>, <c>vendas.pedido-aprovado</c> chega por
+/// <c>pedido-aprovado</c>; sem o prefixo configurado, a ligação teria de ser <c>vendas.pedido-aprovado</c>.
 /// <code>
 /// public sealed class ConsumidorDePedidos(RabbitMqConsumerDependencies deps, IServiceScopeFactory scopes) : RabbitMqConsumer(deps)
 /// {
@@ -287,7 +290,7 @@ public abstract partial class RabbitMqConsumer : BackgroundService
             return;
 
         Interlocked.Increment(ref _inFlight);
-        if (_concurrencySemaphore is null)
+        if (_concurrencySemaphore is not { } semaphore)
         {
             try
             {
@@ -297,23 +300,41 @@ public abstract partial class RabbitMqConsumer : BackgroundService
             {
                 Interlocked.Decrement(ref _inFlight);
             }
+
+            return;
         }
-        else
+
+        try
         {
-            await _concurrencySemaphore.WaitAsync(ct).ConfigureAwait(false);
-            _ = Task.Run(async () =>
+            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Desligamento enquanto esperava vaga: sem ack nem NACK, a mensagem volta à fila com o canal. A contagem precisa
+            // voltar, senão a drenagem esperaria até o fim do DrainTimeout por uma mensagem que nunca entrou em processamento
+            Interlocked.Decrement(ref _inFlight);
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
             {
+                await ProcessAsync(channel, queue, delivery, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
                 try
                 {
-                    await ProcessAsync(channel, queue, delivery, ct).ConfigureAwait(false);
+                    semaphore.Release();
                 }
-                finally
+                catch (ObjectDisposedException)
                 {
-                    _concurrencySemaphore.Release();
-                    Interlocked.Decrement(ref _inFlight);
+                    // Consumidor já descartado: não há quem espere a vaga.
                 }
-            }, CancellationToken.None);
-        }
+            }
+        }, CancellationToken.None);
     }
 
     private async Task ProcessAsync(IChannel channel, QueueDefinition queue, BasicDeliverEventArgs delivery, CancellationToken ct)

@@ -14,17 +14,17 @@
 
 | Peça | Papel |
 |---|---|
-| `IMessagePublisher` | Destino `arn:aws:sns:...` publica no tópico SNS; qualquer outro destino é a URL de uma fila SQS. O envelope viaja em atributos de mensagem e o corpo é o payload JSON |
-| `AwsSqsConsumer` | Base dos consumidores SQS: long polling (`WaitTimeSeconds` 20), `ConcurrencyLimit` (padrão 5), correlação e `traceparent` restaurados |
-| DLQ | A **nativa do SQS** (`RedrivePolicy` da fila): `Reject` deixa a mensagem visível de novo até o `maxReceiveCount` |
-| Credenciais | Segredo `aws-messaging` do TEC.Vault (`ACCESS_KEY_ID:SECRET_ACCESS_KEY`) ou a cadeia padrão da AWS (variáveis, perfil, papel IAM de ECS/EKS/EC2) |
-| `AddTecAws()` | Health check |
+| `IMessagePublisher` | Destino `arn:aws:sns:...` publica no tópico SNS; qualquer outro destino é a URL de uma fila SQS (`DefaultDestination` obrigatório, validado na subida). O envelope viaja em atributos de mensagem e o corpo é o payload JSON. Só falha transitória (5xx, *throttling*, rede) conta como transporte indisponível |
+| `AwsSqsConsumer` | Base dos consumidores SQS: long polling (`WaitTimeSeconds` 20), `ConcurrencyLimit` (padrão 5), visibilidade renovada enquanto o handler roda, envelope validado, `MaxPayloadLength`, métricas de consumo, correlação e `traceparent` restaurados |
+| DLQ | A **nativa do SQS** (`RedrivePolicy` da fila): `Reject` e mensagem inválida ficam visíveis de novo até o `maxReceiveCount` |
+| Credenciais | Segredo `aws-messaging` do TEC.Vault (`ACCESS_KEY_ID:SECRET_ACCESS_KEY[:SESSION_TOKEN]`), relido quando a AWS recusa a credencial, ou, com `UseAmbientCredentials = true`, a cadeia padrão da AWS (variáveis, perfil, papel IAM de ECS/EKS/EC2) |
+| `AddTecAws()` | Health check que lê um atributo do destino padrão na AWS (até 5 s) |
 
 | `ConsumeResult` | Operação no SQS |
 |---|---|
 | `Completed` | `DeleteMessage` |
-| `Retry` · exceção | Nenhuma: a mensagem reaparece após o `VisibilityTimeout` |
-| `Reject` · `Requeue` | `ChangeMessageVisibility(0)` |
+| `Retry` · exceção | `ChangeMessageVisibility` com espera de 2 s a 300 s (dobra a cada recepção) |
+| `Reject` · `Requeue` · inválida | `ChangeMessageVisibility(0)` |
 
 ## 🎯 Quando usar
 
@@ -67,10 +67,10 @@ public sealed class EnvioNotaFiscalConsumer(AwsSqsConsumerDependencies deps) : A
 }
 ```
 
-Prefira o papel IAM do ambiente a chaves de longa duração; se usar o segredo, ele vem só do cofre.
+Com `o.UseAmbientCredentials = true` o pacote ainda lê o cofre primeiro: o papel IAM do ambiente só entra quando o segredo não existe, está vazio ou fora do formato. Para usar só o papel IAM, não cadastre o segredo. Se usar o segredo, ele vem só do cofre.
 
 ## 📚 Documentação
 
-Formato da mensagem, opções, credenciais, concorrência e DLQ, erros e limitações atuais (sem `ITransportUnavailableException`, sem `Pause`): [docs/aws.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/aws.md).
+Formato da mensagem, opções, credenciais, concorrência e DLQ, erros, `RequireTls` e limitações atuais (sem `Pause`, sem administração da DLQ): [docs/aws.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/aws.md).
 
-`net8.0` e `net10.0` · sem Native AOT (AWS SDK) · [MIT](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código
+`net10.0` · sem Native AOT (AWS SDK) · [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código

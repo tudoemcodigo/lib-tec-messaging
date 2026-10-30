@@ -12,7 +12,7 @@ Quando uma publicação ou um processamento falha, a mensagem da exceção (do d
 ## Decisão
 Aplicar uma **sanitização por padrões** antes de gravar ou registrar texto de erro, e validar as entradas externas que viram metadados:
 
-- [`SensitiveDataSanitizer`](../../TEC.Messaging/Internal/SensitiveDataSanitizer.cs) (interno ao núcleo, estático) mascara com `***REDACTED***` tokens Bearer em formato JWT, pares `senha/password/pwd/secret/token/apikey/client_secret/access_token` com valor, segredos de connection string (`pwd`, `password`, `user id`, `uid`, `secret`, `accountkey`, `sharedaccesskey`), cartões de crédito, CPF, CNPJ e CVV/CVC. Os padrões são `[GeneratedRegex]`: gerados em tempo de compilação, sem alocação extra e compatíveis com Native AOT.
+- [`SensitiveDataSanitizer`](../../TEC.Messaging/Internal/SensitiveDataSanitizer.cs) (interno ao núcleo, estático) mascara com `***REDACTED***` tokens Bearer em formato JWT, pares `senha/password/pwd/secret/token/apikey/client_secret/access_token` com valor, segredos de connection string (`pwd`, `password`, `user id`, `uid`, `secret`, `accountkey`, `sharedaccesskey`), cartões de crédito, CPF, CNPJ, CVV/CVC, e-mails e telefones. Os padrões são `[GeneratedRegex]`: gerados em tempo de compilação e compatíveis com Native AOT.
 - **Onde se aplica**: erro gravado no Outbox (`LastError`, truncado em 1000 caracteres) e resumo do relay ([`OutboxRelay`](../../TEC.Messaging/Outbox/OutboxRelay.cs)); cabeçalho `x-tec-error` e motivo de retry/DLQ ([`RabbitMqConsumer`](../../TEC.Messaging.RabbitMQ/Consumers/RabbitMqConsumer.cs)); motivo e descrição da DLQ ([`AzureServiceBusConsumer`](../../TEC.Messaging.AzureServiceBus/Consumers/AzureServiceBusConsumer.cs)); motivo derivado de exceções do handler nos três consumidores.
 - **Correlação**: [`MessageContext`](../../TEC.Messaging/Context/MessageContext.cs) descarta valores vazios, com caracteres de controle ou acima de 128 caracteres.
 - **Telemetria**: o nome do span de consumo só usa o `Type` da mensagem se ele tiver o formato de nome de contrato; senão usa o destino (evita cardinalidade criada por um produtor).
@@ -22,11 +22,11 @@ Aplicar uma **sanitização por padrões** antes de gravar ou registrar texto de
 ## Consequências
 ### Positivas
 - Credenciais e identificadores pessoais que vazam em mensagens de exceção não chegam ao banco, à DLQ nem aos logs do relay.
-- Custo previsível e sem reflexão; funciona em Native AOT.
+- Sem reflexão e sem construir expressões regulares em tempo de execução; funciona em Native AOT.
 - Entradas externas (correlação, tipo) não inflam metadados nem telemetria.
 
 ### Neutras / Negativas
-- A sanitização é por regex e tem limites: tokens opacos sem pontos (`Bearer abc123`) não são mascarados, documentos fora dos formatos cobertos (RG, passaporte) passam, e qualquer sequência de 11 dígitos é mascarada como CPF.
+- A sanitização é por regex e tem limites: tokens opacos sem pontos (`Bearer abc123`) não são mascarados, documentos fora dos formatos cobertos (RG, passaporte) passam, e qualquer sequência de 11 dígitos é mascarada como CPF (e uma de 8 ou 9, como telefone).
 - O objeto de exceção entregue ao `ILogger` (ex.: o evento de erro do handler no RabbitMQ) não passa pelo sanitizador; só os textos gravados e os resumos do relay.
 - Não protege o payload: dados pessoais no evento continuam sendo responsabilidade do contrato.
 - Mudar um padrão muda o texto gravado: testes de regressão em `SanitizerTests` cobrem os formatos principais.

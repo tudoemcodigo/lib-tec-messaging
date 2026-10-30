@@ -14,16 +14,19 @@
 
 | Peça | Papel |
 |---|---|
-| `IMessagePublisher` | Cache de `ServiceBusSender` por destino; o envelope viaja em propriedades do `ServiceBusMessage` e o corpo é o payload JSON; propaga `traceparent` e correlação |
-| `AzureServiceBusConsumer` | Base dos consumidores sobre o `ServiceBusProcessor`, com conclusão manual e `MaxConcurrentCalls` (padrão 10) |
-| DLQ | `Reject` envia à DLQ nativa com motivo e descrição sanitizados (sem PII); `Retry`/`Requeue` abandonam a mensagem e o `MaxDeliveryCount` da entidade decide quando ela vai à DLQ |
-| `AddTecAzureServiceBus()` | Health check |
+| `IMessagePublisher` | `ServiceBusSender` por destino; o envelope viaja em propriedades do `ServiceBusMessage` e o corpo é o payload JSON; propaga `traceparent` e correlação. Só falha transitória conta como transporte indisponível |
+| `AzureServiceBusConsumer` | Base dos consumidores sobre o `ServiceBusProcessor`, com conclusão manual, `MaxConcurrentCalls` (padrão 10), validação do envelope, `MaxPayloadLength` e métricas de consumo |
+| Nova tentativa | Em fila, cópia agendada com espera crescente (5 s a 15 min) e `MaxAttempts` (padrão 5); em assinatura, espera no handler e `Abandon` |
+| DLQ | `Reject`, mensagem inválida e tentativas esgotadas vão à DLQ nativa com motivo e descrição sanitizados (sem PII) |
+| Credencial | Connection string relida do cofre quando o serviço a recusa (rotação sem reinício); emulador sem TLS recusado fora de Development (`RequireTls`) |
+| `AddTecAzureServiceBus()` | Health check que abre o link de envio do `DefaultTopic` (até 5 s) |
 
 | `ConsumeResult` | Operação no Service Bus |
 |---|---|
 | `Completed` | `CompleteMessageAsync` |
-| `Retry` · `Requeue` · exceção | `AbandonMessageAsync` |
-| `Reject` | `DeadLetterMessageAsync` |
+| `Retry` · `Requeue` · exceção (fila) | `ScheduleMessageAsync` da cópia + `CompleteMessageAsync` |
+| `Retry` · `Requeue` · exceção (assinatura) | espera + `AbandonMessageAsync` |
+| `Reject` · tentativas esgotadas | `DeadLetterMessageAsync` |
 
 ## 🎯 Quando usar
 
@@ -66,6 +69,6 @@ A connection string vem só do cofre e nunca é registrada em log.
 
 ## 📚 Documentação
 
-Formato da mensagem, opções, resiliência e DLQ, erros e limitações atuais (sem `ITransportUnavailableException`, sem `Pause`, só connection string): [docs/azureservicebus.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/azureservicebus.md).
+Formato da mensagem, opções, resiliência e DLQ (inclusive o risco de entrega duplicada no reenvio agendado), erros e limitações atuais (sem `Pause`, só connection string): [docs/azureservicebus.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/azureservicebus.md).
 
-`net8.0` e `net10.0` · sem Native AOT (SDK do Azure) · [MIT](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código
+`net10.0` · sem Native AOT (SDK do Azure) · [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código

@@ -6,6 +6,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using RabbitMQ.Client;
 using TEC.Messaging.Diagnostics;
+using TEC.Messaging.Internal;
 using TEC.Vault.Abstractions;
 
 namespace TEC.Messaging.RabbitMQ.Internal;
@@ -107,6 +108,11 @@ internal sealed partial class RabbitMqConnection(
             throw new InvalidOperationException($"Segredo '{settings.ConnectionSecretName}' da mensageria indisponível no cofre ({secret.Error?.Code}).");
         if (!Uri.TryCreate(secret.Value.Value, UriKind.Absolute, out var uri) || uri.Scheme is not ("amqp" or "amqps"))
             throw new InvalidOperationException($"O segredo '{settings.ConnectionSecretName}' não contém uma URI amqp:// ou amqps:// válida.");
+        if (uri.Scheme != "amqps" && TransportSecurity.RequiresTls(settings.RequireTls, environment))
+        {
+            throw new InvalidOperationException(
+                $"O segredo '{settings.ConnectionSecretName}' traz uma URI amqp:// (sem TLS), recusada porque a conexão exige TLS (RequireTls; padrão fora de Development). Use amqps:// ou, só se o tráfego já for protegido de outra forma, RequireTls = false.");
+        }
 
         var factory = new ConnectionFactory
         {

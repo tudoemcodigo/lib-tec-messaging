@@ -92,7 +92,7 @@ Mensagens gravadas no Outbox durante o processamento herdam a correlação e a c
 | `CleanupInterval` | 1 h | 1 min a 1 dia | Intervalo da limpeza |
 | `MaxConsumerLength` | 100 | constante | Tamanho máximo do nome do consumidor |
 
-A limpeza apaga em lotes de 5.000 enquanto vierem cheios, por até 1 minuto a cada intervalo, e registra o total (eventos de log 4101 e 4102 para falha). Opções inválidas falham na subida (`OptionsValidationException`).
+A limpeza apaga em lotes de 5.000 enquanto vierem cheios, por até 1 minuto a cada intervalo, e registra o total (eventos de log 4101 e 4102 para falha). Cada registro sai pela própria chave `(MessageId, Consumer)`: o registro vencido de um consumidor nunca leva junto o de outro consumidor para a mesma mensagem. Opções inválidas falham na subida (`OptionsValidationException`).
 
 > [!IMPORTANT]
 > `Retention` precisa ser maior que o tempo máximo que uma mensagem pode levar para ser reentregue (filas de espera, DLQ reprocessada, consumidor parado). Uma mensagem reentregue depois da limpeza seria processada de novo.
@@ -111,7 +111,7 @@ A limpeza apaga em lotes de 5.000 enquanto vierem cheios, por até 1 minuto a ca
 > [!NOTE]
 > O nome do consumidor é parte da chave: mantenha-o estável. Renomear faz mensagens antigas reentregues serem processadas de novo.
 
-- O `IsDuplicate` só reconhece a chave primária **do Inbox** (no SQL Server, o erro 2627 com o nome da chave; no PostgreSQL, `23505` na constraint da chave). Duplicidade em tabelas da aplicação não vira "já processada".
+- O `IsDuplicate` só reconhece a chave primária **do Inbox** (no SQL Server, o erro 2627 com o nome da chave; no PostgreSQL, `23505` na constraint da chave). Duplicidade em tabelas da aplicação não vira "já processada", e sem o Inbox no modelo nada é reconhecido como duplicata, nos dois bancos.
 - O Inbox guarda só ids e o nome do consumidor, nunca o payload.
 
 ## ❓ Perguntas frequentes

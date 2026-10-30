@@ -14,7 +14,7 @@
     <UserSecretsId>tudoemcodigo-tec-testes</UserSecretsId>
   </PropertyGroup>
 
-  <!-- Versão por runtime (8.0.x no net8.0, 10.0.x no net10.0) definida no Directory.Packages.props -->
+  <!-- Versão (10.0.x) definida no Directory.Packages.props -->
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>

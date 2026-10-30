@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using TEC.Messaging.AzureServiceBus.Consumers;
 using TEC.Messaging.AzureServiceBus.Internal;
 using TEC.Messaging.DependencyInjection;
+using TEC.Messaging.Diagnostics;
 using TEC.Messaging.Transport;
 
 namespace TEC.Messaging.AzureServiceBus.DependencyInjection;
@@ -43,7 +44,10 @@ public static class MessagingBuilderAzureServiceBusExtensions
         services.TryAddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<AzureServiceBusPublisher>());
         services.TryAddSingleton(sp => new AzureServiceBusConsumerDependencies(
             sp.GetRequiredService<AzureServiceBusConnection>(),
-            sp.GetRequiredService<ILoggerFactory>()));
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<MessagingMetrics>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IOptions<MessagingOptions>>().Value.MaxPayloadLength));
 
         return builder;
     }
@@ -54,7 +58,8 @@ public static class MessagingBuilderAzureServiceBusExtensions
         => builder.AddAzureServiceBusConsumer<TConsumer>();
 
     /// <summary>
-    /// Registra um consumidor do Azure Service Bus no container como serviço hospedado.
+    /// Registra um consumidor do Azure Service Bus no container como singleton e serviço hospedado. Idempotente por tipo:
+    /// registrar duas vezes não sobe dois processadores.
     /// </summary>
     /// <typeparam name="TConsumer">Tipo do consumidor.</typeparam>
     /// <param name="builder">Builder do TEC.Messaging.</param>
@@ -64,13 +69,20 @@ public static class MessagingBuilderAzureServiceBusExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
         var services = builder.Services;
+        if (services.Any(d => d.ServiceType == typeof(AzureServiceBusConsumerRegistration<TConsumer>)))
+            return builder;
+        services.AddSingleton<AzureServiceBusConsumerRegistration<TConsumer>>();
 
+        // Registro próprio do consumidor (ex.: fábrica com parâmetros) é respeitado
         services.TryAddSingleton<TConsumer>();
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TConsumer>());
         return builder;
     }
 
-    /// <summary>Adiciona health check do Azure Service Bus.</summary>
+    /// <summary>
+    /// Health check do Azure Service Bus: abre (ou reaproveita) o link de envio de <see cref="AzureServiceBusOptions.DefaultTopic"/>
+    /// e pede um lote vazio, o que toca a rede e valida a credencial sem publicar nada. Responde em até 5 s.
+    /// </summary>
     public static IHealthChecksBuilder AddTecAzureServiceBus(
         this IHealthChecksBuilder builder, string name = "azure-servicebus", IEnumerable<string>? tags = null)
     {
@@ -79,21 +91,43 @@ public static class MessagingBuilderAzureServiceBusExtensions
     }
 }
 
+/// <summary>Marca de registro de um consumidor (torna <c>AddAzureServiceBusConsumer</c> idempotente).</summary>
+internal sealed class AzureServiceBusConsumerRegistration<TConsumer>;
+
 internal sealed class AzureServiceBusHealthCheck(AzureServiceBusConnection connection, IOptions<AzureServiceBusOptions> options) : IHealthCheck
 {
+    internal static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(5);
+
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        if (!options.Value.Enabled)
+        var settings = options.Value;
+        if (!settings.Enabled)
             return HealthCheckResult.Healthy("Transporte Azure Service Bus desabilitado.");
+        if (string.IsNullOrWhiteSpace(settings.DefaultTopic))
+            return HealthCheckResult.Degraded("DefaultTopic vazio: sem entidade conhecida, a conectividade com o Azure Service Bus não foi testada.");
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(CheckTimeout);
+        Azure.Messaging.ServiceBus.ServiceBusSender? sender = null;
         try
         {
-            var client = await connection.GetClientAsync(cancellationToken).ConfigureAwait(false);
-            return client.IsClosed ? HealthCheckResult.Unhealthy("Cliente Service Bus fechado.") : HealthCheckResult.Healthy();
+            sender = await connection.GetSenderAsync(settings.DefaultTopic, timeout.Token).ConfigureAwait(false);
+
+            // O lote depende do tamanho máximo negociado no link: criá-lo abre o link (rede + autorização de envio)
+            using var batch = await sender.CreateMessageBatchAsync(timeout.Token).AsTask().WaitAsync(CheckTimeout, cancellationToken).ConfigureAwait(false);
+            return HealthCheckResult.Healthy();
         }
-        catch (Exception ex)
+        catch (UnauthorizedAccessException ex)
         {
-            return HealthCheckResult.Unhealthy("Azure Service Bus indisponível.", ex);
+            if (sender is not null)
+                await connection.InvalidateAsync(sender).ConfigureAwait(false);
+            return HealthCheckResult.Unhealthy("Credencial recusada pelo Azure Service Bus.", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return HealthCheckResult.Unhealthy(ex is OperationCanceledException or TimeoutException
+                ? "Azure Service Bus sem resposta em 5 s."
+                : "Azure Service Bus indisponível.", ex);
         }
     }
 }

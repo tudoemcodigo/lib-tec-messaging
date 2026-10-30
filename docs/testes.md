@@ -22,7 +22,7 @@ Os testes usam o [TUnit](https://tunit.dev) sobre o *Microsoft Testing Platform*
 
 | Categoria | Projeto | Onde roda | Conteúdo |
 |---|---|---|---|
-| *(sem)* | `TEC.Messaging.Tests` | PR, main, release (net10.0, net8.0, sem ICU) | Contratos, envelope, correlação, sanitizador, relay (Outbox em memória), interceptor (EF InMemory), modelo do PostgreSQL, opções e registro de RabbitMQ/Azure/AWS, circuit breaker |
+| *(sem)* | `TEC.Messaging.Tests` | PR, main, release (net10.0, também sem ICU) | Contratos, envelope, correlação, sanitizador, relay (Outbox em memória), interceptor (EF InMemory), modelo e SQL do PostgreSQL, opções e registro de RabbitMQ/Azure/AWS, classificação de falhas de publicação, `RequireTls`, rotação de credencial, leitura do envelope nos consumidores do Azure e da AWS, circuit breaker |
 | `Integracao` | `TEC.Messaging.Tests` | PR e main (SQL Server e RabbitMQ em container) | Reserva concorrente, conclusão, administração, Inbox; publicação, retry, DLQ, requeue, drenagem |
 | `Carga-CI` | `TEC.Messaging.LoadTests` | `performance.yml` | Quatro relays concorrentes publicam cada mensagem uma vez |
 | `Carga-Pesada` | `TEC.Messaging.LoadTests` | `performance.yml` | O mesmo com 16 relays e volume (teste `Explicit`) |
@@ -35,16 +35,17 @@ flowchart LR
     C --> B["Benchmarks<br/>BenchmarkDotNet"]
 ```
 
-Os testes de **PostgreSQL**, **Azure Service Bus** e **AWS** são unitários (mapeamento do modelo, validação de opções e registro no container); não há integração com esses serviços.
+Os testes de **PostgreSQL**, **Azure Service Bus** e **AWS** são unitários: modelo e SQL gerado, validação de opções e de definições, registro no container, classificação das falhas de publicação, recusa sem TLS, recriação do cliente com o segredo relido, leitura e validação do envelope nos consumidores e health check com o cofre fora. Não há integração com esses serviços: o laço dos consumidores (reenvio agendado, `Abandon` em assinatura, renovação de visibilidade, concorrência) e o `RequeueAsync` do PostgreSQL com o relógio do banco não têm teste automatizado.
+
+Os testes de integração do RabbitMQ sobem o host em `Development`, onde `RequireTls` aceita `amqp://`.
 
 ---
 
 ## 🚀 Uso
 
 ```bash
-# Unitários, como no CI (os dois alvos)
+# Unitários, como no CI
 dotnet run --project TEC.Messaging.Tests -c Release -f net10.0 -- --treenode-filter "/*/*/*/*[Category!=Integracao]"
-dotnet run --project TEC.Messaging.Tests -c Release -f net8.0  -- --treenode-filter "/*/*/*/*[Category!=Integracao]"
 
 # Integração local (variáveis, ou user-secrets id tudoemcodigo-tec-testes, seção TecTestes)
 export TEC_TESTES_MESSAGING_SQL_CONEXAO="Server=localhost,1433;Database=tec_testes;...;TrustServerCertificate=True"
@@ -83,10 +84,11 @@ Os mesmos que o CI sobe (`.github/scripts/integration-setup.sh`): SQL Server 202
 | Área | Pasta | O que cobre |
 |---|---|---|
 | Contratos e envelope | `Core/ContractsTests` | Registro por nome, versão e tipo; varredura de assembly; `JsonTypeInfo`; JSON padrão do TEC.Core; nomes inválidos; duplicidade; fábrica (mapeamento, carimbo de contexto, rejeição de tipo não registrado e payload grande); `AddTecMessaging` idempotente; limites do envelope; `MessageContext`; UUIDv7 |
-| Sanitização | `Core/SanitizerTests` | CPF, CNPJ, cartão, CVV, senhas e tokens |
+| Sanitização | `Core/SanitizerTests` | CPF, CNPJ, cartão, CVV, senhas e tokens (e-mail e telefone em `MessagingIssueRegressionTests`) |
 | Relay do Outbox | `Outbox/OutboxRelayTests` | Ordem, falha isolada, `Dead`, pausa por falhas seguidas, reserva, backoff, opções inválidas, estatísticas, transporte indisponível (nunca conta tentativa), prazo da reserva, limpeza em lotes. Usa `InMemoryOutboxStore`, `FakePublisher` e relógio manual (`ManualTimeProvider`) |
 | Interceptor e modelo (SQL Server) | `SqlServer/InterceptorTests`, `SqlServerUnitTests` | Eventos de domínio viram linhas do Outbox no mesmo `SaveChanges`; falha não duplica; `IOutbox`; esquema; filtros de índice com o nome real da coluna; métrica `enqueued` só depois do sucesso; limpeza do Inbox em lotes. Usa EF Core InMemory |
 | Modelo (PostgreSQL) | `PostgreSql/PostgreSqlUnitTests` | Tabelas, esquema e nomes delimitados |
+| Regressões de revisão | `MessagingIssueRegressionTests` | Interceptor do PostgreSQL resolve pelo container; publicadores do Azure e da AWS com `Enabled = false` lançam `ITransportUnavailableException`; sanitizador mascara e-mail, telefone e cartão; `DeterministicGuid` estável |
 | RabbitMQ | `RabbitMq/RabbitMqUnitTests`, `RabbitMqResilienceTests` | Transporte desligado/indisponível, `Dispose` aguarda a publicação, requeue vazio, fila inexistente (404), nomes das filas de espera, formato do envelope e envelopes malformados, limite de payload, nome do span, circuit breaker (abre, meia-abertura, cancelamento), reconexão com jitter, opções inválidas |
 | Azure Service Bus e AWS | `AzureServiceBus/…`, `Aws/…` | Validação das opções e registro no container |
 

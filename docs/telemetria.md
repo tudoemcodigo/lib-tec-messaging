@@ -96,7 +96,7 @@ durante o processamento herdam os dois. `MessageContext.Begin(correlationId, cau
 | Publicação | `Producer` | `<Type do contrato> publish` | Cada `PublishAsync` (RabbitMQ, Azure Service Bus e AWS). O pai é o `traceparent` gravado no Outbox (o trace da requisição que gerou o evento) |
 | Consumo | `Consumer` | `<Type> process`, ou `<destino> process` | Cada mensagem recebida. Se o `Type` não tem o formato de nome de contrato (entrada não confiável), o span leva o nome do destino, para um produtor não inflar a cardinalidade |
 
-Tags: `messaging.system` (`rabbitmq`, `azure-servicebus`, `aws` na publicação e `aws-sqs` no consumo), `messaging.operation.type` (`publish`/`process`), `messaging.destination.name` (exchange, fila, tópico, URL ou ARN), `messaging.message.id`, `messaging.message.conversation_id` (a correlação) e `tec.messaging.type`. O publicador do RabbitMQ acrescenta `messaging.rabbitmq.destination.routing_key`. O consumidor do RabbitMQ marca o span com erro quando o desfecho não é `Completed`.
+Tags: `messaging.system` (`rabbitmq`, `azure-servicebus`, `aws` na publicação e `aws-sqs` no consumo), `messaging.operation.type` (`publish`/`process`), `messaging.destination.name` (na publicação: exchange, fila, tópico, URL ou ARN; no consumo: a fila, `tópico/assinatura` no Azure Service Bus e o nome da fila SQS, sem a URL com a conta), `messaging.message.id`, `messaging.message.conversation_id` (a correlação) e `tec.messaging.type`. O publicador do RabbitMQ acrescenta `messaging.rabbitmq.destination.routing_key`. Os três consumidores marcam o span com erro quando o desfecho não é `Completed`.
 
 O publicador grava no `traceparent` da mensagem o id do próprio span de publicação: o consumidor continua o trace a partir dele.
 
@@ -118,11 +118,11 @@ O publicador grava no `traceparent` da mensagem o id do próprio span de publica
 | `tec.messaging.dlq.messages` | Gauge | `{message}` | `messaging.destination.name` | Mensagens nas DLQs, por fila |
 
 > [!NOTE]
-> Hoje só o consumidor do RabbitMQ emite `consumer.messages` e `consumer.duration`; o monitor de DLQ e o circuit breaker de conexão também são do RabbitMQ. Os consumidores do Azure Service Bus e da AWS emitem apenas os spans de consumo.
+> Os três consumidores (RabbitMQ, Azure Service Bus e AWS) emitem `consumer.messages` e `consumer.duration` com os mesmos desfechos. Mensagem inválida conta como `rejected`. O monitor de DLQ e o circuit breaker de conexão continuam só no RabbitMQ.
 
 ### Logs
 
-Os eventos usam `LoggerMessage` com ids estáveis: relay do Outbox 4001–4006, limpeza do Inbox 4101–4102, consumidor do RabbitMQ 4201–4214, monitor de DLQ 4301 e conexão do RabbitMQ 4401–4404. A lista completa por componente está em [📤 Outbox](outbox.md#-erros) e [🐇 RabbitMQ](rabbitmq.md#-erros). O erro gravado em `LastError`, o resumo de transporte indisponível do relay e o cabeçalho `x-tec-error` passam pelo `SensitiveDataSanitizer`; o objeto de exceção entregue ao `ILogger` (ex.: evento 4204) não ([🛡️ Segurança](seguranca.md)).
+Os eventos usam `LoggerMessage` com ids estáveis: relay do Outbox 4001–4006, limpeza do Inbox 4101–4102, consumidor do RabbitMQ 4201–4214, monitor de DLQ 4301, conexão do RabbitMQ 4401–4404, consumidor da AWS 4501–4509 e consumidor do Azure Service Bus 4601–4611. A lista completa por componente está em [📤 Outbox](outbox.md#-erros) e [🐇 RabbitMQ](rabbitmq.md#-erros). O erro gravado em `LastError`, o resumo de transporte indisponível do relay e o cabeçalho `x-tec-error` passam pelo `SensitiveDataSanitizer`; o objeto de exceção entregue ao `ILogger` (ex.: evento 4204) não ([🛡️ Segurança](seguranca.md)).
 
 ---
 
@@ -139,7 +139,6 @@ Os eventos usam `LoggerMessage` com ids estáveis: relay do Outbox 4001–4006, 
 |---|---|---|
 | Gauges do Outbox sem valor | Sem `IOutboxAdministration` registrado ou intervalo 0 | Use `UseSqlServer<TContext>()` ou `UsePostgreSql<TContext>()`; ajuste o intervalo |
 | Gauges do Outbox sem valor com o relay desligado | Os gauges são atualizados pelo `OutboxRelay` | Ligue `AddOutboxRelay()` na instância que deve emiti-los |
-| Sem métricas de consumo no Azure/AWS | Só o RabbitMQ emite essas métricas | Use os spans de consumo e as métricas do broker |
 | Consumidor sem trace do produtor | Mensagem sem `traceparent` (produtor externo) | O span de consumo começa um trace novo |
 
 ## 🛡️ Segurança

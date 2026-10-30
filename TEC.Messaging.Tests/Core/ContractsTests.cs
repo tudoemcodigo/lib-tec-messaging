@@ -176,6 +176,32 @@ public class ContractsTests
     }
 
     [Test]
+    public async Task Factory_normalizes_occurred_at_to_utc()
+    {
+        // O mesmo instante em fusos diferentes sai sempre em UTC (o Npgsql recusa offset diferente de zero em timestamptz)
+        await using var sp = Build(b => b.AddEventType<PedidoCanceladoV1>());
+        var factory = sp.GetRequiredService<IntegrationEnvelopeFactory>();
+        var brasilia = new DateTimeOffset(2026, 10, 29, 9, 0, 0, TimeSpan.FromHours(-3));
+
+        var envelope = factory.Create(new PedidoCanceladoV1(Guid.NewGuid()), brasilia);
+
+        await Assert.That(envelope.OccurredAt.Offset).IsEqualTo(TimeSpan.Zero);
+        await Assert.That(envelope.OccurredAt.UtcDateTime).IsEqualTo(new DateTime(2026, 10, 29, 12, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task Factory_accepts_instants_before_the_unix_epoch()
+    {
+        // UUIDv7 da BCL recusa instante anterior à época Unix: a fábrica usa a própria época no identificador
+        await using var sp = Build(b => b.AddEventType<PedidoCanceladoV1>());
+        var factory = sp.GetRequiredService<IntegrationEnvelopeFactory>();
+
+        var envelope = factory.Create(new PedidoCanceladoV1(Guid.NewGuid()), new DateTimeOffset(1969, 12, 31, 0, 0, 0, TimeSpan.Zero));
+
+        await Assert.That(envelope.MessageId.ToString()[14]).IsEqualTo('7');
+    }
+
+    [Test]
     public async Task Add_tec_messaging_is_idempotent()
     {
         var services = new ServiceCollection();

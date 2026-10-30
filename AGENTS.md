@@ -13,17 +13,20 @@ Este arquivo complementa as instruções herdadas de `AGENT_BASE.md`. O TEC.Mess
 
 ## Mapa da implementação
 
-- `TEC.Messaging/`: biblioteca multi-target (`net8.0` e `net10.0`), núcleo agnóstico.
-  - `Abstractions/`: `IMessageEnvelope`, `[IntegrationEvent]`, `IOutboxStore`, `IInboxStore`, `IMessageMapper`, `ISanitizer`, `IRelay`, `IConsumer`.
-  - `Sanitization/`: sanitizador LGPD de PII (CPF, CNPJ, e-mail, telefone, cartão, documentos, tokens, chaves).
-  - `Correlation/`: propagação de `traceparent`, `baggage`, `X-Correlation-ID` entre serviços.
-  - `Telemetry/`: `ActivitySource` e `Meter` `TEC.Messaging` da BCL; assinados pelo TEC.Observability via prefixo `TEC.*`.
-  - `DependencyInjection/`: `AddTecMessaging` com encadeamento fluente (`AddEventType`, `Map`, `UseSqlServer`, `UsePostgreSql`, `UseRabbitMq`, `UseAzureServiceBus`, `UseAws`, `AddOutboxRelay`).
+- `TEC.Messaging/`: biblioteca `net10.0` (único alvo, definido no `build/Tec.Build.props` canônico), núcleo agnóstico.
+  - Raiz: `MessageEnvelope` (record com limites e `Validate`), `MessagingOptions`, `Consumers/ConsumerModels.cs` (`ConsumeResult`, `ReceivedMessage`).
+  - `Contracts/`: `[IntegrationEvent]`, `IMessageTypeRegistry`, `MessageTypeInfo`. `Mapping/`: `IIntegrationEventMapper` e `IntegrationEventMapper<T>`.
+  - `Outbox/`: `IOutboxStore`, `IOutboxAdministration`, `IOutbox`, `OutboxRelay`, `OutboxOptions`, `IntegrationEnvelopeFactory`. `Inbox/`: `IInboxStore`, limpeza e `InboxOptions`.
+  - `Transport/`: `IMessagePublisher` e `ITransportUnavailableException`. `Administration/`: `IDeadLetterAdministration`.
+  - `Internal/`: `SensitiveDataSanitizer` (LGPD: CPF, CNPJ, e-mail, telefone, cartão, CVV, senhas, tokens Bearer JWT, connection strings), `GuidV7`, `DeterministicGuid`.
+  - `Context/`: `MessageContext` (correlação e causa por `AsyncLocal`; o `traceparent` vai no envelope, sem `baggage`).
+  - `Diagnostics/`: `ActivitySource` e `Meter` `TEC.Messaging` da BCL; assinados pelo TEC.Observability via prefixo `TEC.*`.
+  - `DependencyInjection/`: `AddTecMessaging` com encadeamento fluente (`AddEventType`, `Map`, `AddMapper`, `UseSqlServer`, `UsePostgreSql`, `UseRabbitMq`, `UseAzureServiceBus`, `UseAws`, `AddConsumer`, `AddOutboxRelay`, `AddInboxCleanup`).
 - `TEC.Messaging.SqlServer/`: Outbox e Inbox no SQL Server com EF Core, interceptor de eventos de domínio, `UPDLOCK`/`READPAST`, administração.
 - `TEC.Messaging.PostgreSql/`: Outbox e Inbox no PostgreSQL com EF Core (`FOR UPDATE SKIP LOCKED`, `RETURNING`), interceptor.
-- `TEC.Messaging.RabbitMQ/`: publicador com confirms, consumidores com concorrência paralela, retry escalonado, DLQ, pausa, health check, circuit breaker.
-- `TEC.Messaging.AzureServiceBus/`: publicador e consumidor para filas e tópicos do Azure Service Bus, confirms, DLQ, concorrência, health check.
-- `TEC.Messaging.Aws/`: publicador e consumidor para filas Amazon SQS e tópicos SNS, long polling, concorrência, DLQ, health check.
+- `TEC.Messaging.RabbitMQ/`: publicador com confirms e `mandatory` (`RabbitMqUnroutableException`), consumidores com concorrência paralela, retry escalonado, DLQ, pausa, health check, circuit breaker, `RequireTls`.
+- `TEC.Messaging.AzureServiceBus/`: publicador e consumidor para filas e tópicos do Azure Service Bus, classificação transitória/definitiva, reenvio agendado com backoff, rotação de credencial, DLQ, concorrência, health check que toca a rede, `RequireTls`.
+- `TEC.Messaging.Aws/`: publicador e consumidor para filas Amazon SQS e tópicos SNS, classificação transitória/definitiva, long polling com renovação de visibilidade, rotação de credencial, concorrência, DLQ (redrive), health check que toca a rede, `RequireTls`.
 - `TEC.Messaging.Tests/`: testes unitários sem dependências; integração com SQL Server e RabbitMQ em container.
 - `TEC.Messaging.LoadTests/` e `TEC.Messaging.Benchmarks/`: carga e benchmarks.
 - `samples/`: exemplos de uso.
@@ -34,7 +37,7 @@ Este arquivo complementa as instruções herdadas de `AGENT_BASE.md`. O TEC.Mess
 ## Contratos relevantes
 
 - `Directory.Build.props` é a fonte única de versão do pacote (uma versão para todos os pacotes). A versão inicial é `0.0.1`; não introduza versões nos `.csproj`.
-- `Directory.Packages.props` pode declarar versões distintas por TFM; condições por TFM são intencionais.
+- `Directory.Packages.props` declara uma versão por pacote, sem condição por TFM (o único alvo é `net10.0`).
 - Dependências TEC.* são declaradas com `<TecReference Include="..." />`, não com `PackageReference` direto.
 - `[IntegrationEvent("nome", Version = N)]` define contrato público estável; alteração requer nova versão do evento.
 - `IOutboxStore` e `IInboxStore` são contratos de persistência; implementações EF Core usam interceptors transacionais.

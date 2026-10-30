@@ -4,7 +4,7 @@
 
   <PropertyGroup>
     <RootNamespace>TEC.Messaging.AzureServiceBus</RootNamespace>
-    <Description>Transporte Azure Service Bus do TEC.Messaging: publicação em tópicos/filas com confirmação, consumidores com retentativa escalonada, DLQ nativa, processamento concorrente e segredos integrados ao TEC.Vault.</Description>
+    <Description>Transporte Azure Service Bus do TEC.Messaging: publicação em tópicos/filas com confirmação, consumidores com nova tentativa reagendada com espera crescente, DLQ nativa, processamento concorrente e segredos integrados ao TEC.Vault.</Description>
     <PackageTags>messaging;azure;servicebus;cloud;retry;dead-letter;vault;opentelemetry;tec</PackageTags>
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     <!--
@@ -15,18 +15,9 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Messaging.ServiceBus" />
-    <PackageReference Include="Polly.Core" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
-  </ItemGroup>
-
-  <!--
-    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
-    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
-  -->
-  <ItemGroup>
-    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

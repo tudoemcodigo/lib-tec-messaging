@@ -32,16 +32,18 @@
 
 | Arquivo | Função |
 |---|---|
-| [`ci.yml`](ci.yml) | PR, push na `main` (prévia) e semanal, com `dotnet-ci.yml@v2` |
-| [`release.yml`](release.yml) | Versão estável ou `-rc.N`, com `dotnet-release.yml@v2` |
-| [`performance.yml`](performance.yml) | Carga sob demanda (`dotnet-test.yml@v2`) e benchmarks (`dotnet-benchmark.yml@v2`) |
+| [`ci.yml`](ci.yml) | PR, push na `main` (prévia) e semanal, com `dotnet-ci.yml@v1` |
+| [`release.yml`](release.yml) | Versão estável ou `-rc.N`, com `dotnet-release.yml@v1` |
+| [`performance.yml`](performance.yml) | Carga sob demanda (`dotnet-test.yml@v1`) e benchmarks (`dotnet-benchmark.yml@v1`) |
 | [`../scripts/integration-setup.sh`](../scripts/integration-setup.sh) | Sobe SQL Server e RabbitMQ descartáveis (senhas aleatórias, mascaradas) e exporta as conexões |
 | [`../scripts/integration-teardown.sh`](../scripts/integration-teardown.sh) | Remove os containers (sempre) |
 | [`../dependabot.yml`](../dependabot.yml) · [`../zizmor.yml`](../zizmor.yml) | Canônicos do tec-workflows |
 
 ## 🔑 Variables e Secrets
 
-Nenhuma variável própria: o feed `tec-interno` usa o `GITHUB_TOKEN` (organização). Não há testes contra Azure.
+Os workflows não têm variável própria: o feed `tec-interno` usa o `GITHUB_TOKEN` (organização). Não há testes contra Azure.
+
+O Dependabot é a exceção. Ele não usa o `GITHUB_TOKEN` e o GitHub Packages exige autenticação, então o `.github/dependabot.yml` lê o secret `PACKAGES_READ_TOKEN` (PAT classic com `read:packages`). Ele é criado uma vez na organização, em Settings > Secrets and variables > Dependabot.
 
 ## 🚀 Como publicar
 

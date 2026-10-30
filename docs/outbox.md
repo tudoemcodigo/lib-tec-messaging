@@ -58,7 +58,7 @@ Ritmo do relay: a cada ciclo ele espera `PollInterval` se o lote veio incompleto
 > devem ser idempotentes ([Inbox](inbox.md)) e tolerar reordenação (ex.: comparar versões/datas).
 
 > [!IMPORTANT]
-> Falhas **sem** a marca de transporte indisponível contam tentativa. Se o seu `IMessagePublisher` próprio lança exceções para broker fora do ar, implemente `ITransportUnavailableException` nelas, senão uma queda longa leva as mensagens a `Dead` (as exceções do RabbitMQ já têm a marca; AWS e Azure Service Bus não, ver [☁️](azureservicebus.md) e [🟧](aws.md)).
+> Falhas **sem** a marca de transporte indisponível contam tentativa. Se o seu `IMessagePublisher` próprio lança exceções para broker fora do ar, implemente `ITransportUnavailableException` nelas, senão uma queda longa leva as mensagens a `Dead`. Os três satélites já marcam as próprias exceções, e só as transitórias (broker fora, rede, *throttling*, serviço ocupado, tempo esgotado). Recusa da mensagem, destino inexistente, permissão negada e, no RabbitMQ, mensagem sem fila ligada (`RabbitMqUnroutableException`, publicação `mandatory`) contam tentativa e chegam a `Dead` ([ADR 0003](adr/0003-falhas-isoladas-backoff-e-transporte-indisponivel-sem-contar-tentativa.md)). Os instantes do envelope (`OccurredAt`) são gravados em UTC.
 
 ---
 
@@ -69,7 +69,11 @@ services.AddTecMessaging()
     .AddEventType<PedidoAprovadoV1>()
     .Map<PedidoAprovado>(e => new PedidoAprovadoV1(e.PedidoId, e.Total))
     .UseSqlServer<VendasDbContext>()                  // ou UsePostgreSql<VendasDbContext>()
-    .UseRabbitMq(o => o.Exchange = "vendas.eventos")  // ou UseAzureServiceBus / UseAws
+    .UseRabbitMq(o =>                                 // ou UseAzureServiceBus / UseAws
+    {
+        o.Exchange = "vendas.eventos";
+        o.RoutingKeyPrefixToRemove = "vendas.";       // vendas.pedido-aprovado → routing key pedido-aprovado
+    })
     .AddDomainEventsObserver<GravadorDeHistorico>()   // SQL Server, opcional: dados próprios na mesma transação
     .AddOutboxRelay(o => o.MaxAttempts = 15);         // em quantos processos quiser
 

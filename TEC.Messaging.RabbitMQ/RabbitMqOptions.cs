@@ -19,6 +19,13 @@ public sealed class RabbitMqOptions
     /// <summary>Nome do segredo (no TEC.Vault) com a URI AMQP (<c>amqps://usuario:senha@host:5671/vhost</c>). Padrão <c>rabbitmq</c>.</summary>
     public string ConnectionSecretName { get; set; } = "rabbitmq";
 
+    /// <summary>
+    /// Exige TLS na conexão: uma URI <c>amqp://</c> no segredo é recusada ao abrir a conexão (subida dos consumidores, primeira
+    /// publicação, health check), sem tentar o broker. <c>null</c> (padrão) = exige fora de Development
+    /// (<c>IHostEnvironment.IsDevelopment()</c>); <c>false</c> libera <c>amqp://</c> em qualquer ambiente.
+    /// </summary>
+    public bool? RequireTls { get; set; }
+
     /// <summary>Exchange topic dos eventos de integração (obrigatória).</summary>
     public string Exchange { get; set; } = "";
 
@@ -157,6 +164,29 @@ public sealed class RabbitMqCircuitOpenException : Exception, ITransportUnavaila
 
     /// <summary>Cria a exceção com mensagem e causa.</summary>
     public RabbitMqCircuitOpenException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
+/// O RabbitMQ devolveu a mensagem (<c>basic.return</c>): a publicação é feita com <c>mandatory</c> e nenhuma fila está ligada à
+/// exchange com a routing key da mensagem. É falha de roteamento, não do transporte: o Outbox conta a tentativa e, esgotadas
+/// as tentativas, a mensagem vai para <see cref="Outbox.OutboxMessageStatus.Dead"/>, em vez de sumir sem aviso.
+/// </summary>
+public sealed class RabbitMqUnroutableException : Exception
+{
+    /// <summary>Cria a exceção.</summary>
+    public RabbitMqUnroutableException() : base("O RabbitMQ devolveu a mensagem: nenhuma fila ligada para a routing key.")
+    {
+    }
+
+    /// <summary>Cria a exceção com mensagem.</summary>
+    public RabbitMqUnroutableException(string message) : base(message)
+    {
+    }
+
+    /// <summary>Cria a exceção com mensagem e causa.</summary>
+    public RabbitMqUnroutableException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }

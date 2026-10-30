@@ -5,7 +5,6 @@
     RabbitMQ (ver README.md desta pasta); a conexão do banco e a URI do broker vêm do cofre (TEC.Vault em memória no exemplo).
   -->
   <PropertyGroup>
-    <TargetFrameworks>net10.0</TargetFrameworks>
     <UserSecretsId>tudoemcodigo-tec-testes</UserSecretsId>
   </PropertyGroup>
 

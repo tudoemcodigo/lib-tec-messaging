@@ -20,7 +20,7 @@
 | Item | Regra |
 |---|---|
 | Versão | Única, em `Directory.Build.props` (`<Version>`), igual para todos os pacotes |
-| Alvos | `net8.0` e `net10.0` (SDK `10.0.401` com `rollForward: latestPatch`, em `global.json`) |
+| Alvo | `net10.0` (LTS), vindo do `build/Tec.Build.props` canônico (SDK `10.0.402` com `rollForward: latestPatch`, em `global.json`) |
 | Dependências TEC | `<TecReference Include="TEC.Core" />`; versão publicada em `Directory.Packages.props` |
 | Modo local | `-p:TecUseLocalProjects=true` usa os repositórios vizinhos (`..\TEC.Core`, `..\TEC.Vault`) |
 | Lock | `packages.lock.json` versionado (modo pacote): `dotnet restore TEC.Messaging.slnx --force-evaluate` |
@@ -35,10 +35,10 @@
 | `TEC.Messaging.RabbitMQ/` · `TEC.Messaging.AzureServiceBus/` · `TEC.Messaging.Aws/` | Transportes (pacotes) |
 | `TEC.Messaging.Tests/` · `TEC.Messaging.LoadTests/` · `TEC.Messaging.Benchmarks/` | Testes, carga e benchmarks (nunca viram pacote) |
 | `samples/` | Exemplo executável (nunca vira pacote) |
-| `build/` | `Tec.Build.props`, `Tec.Build.targets` e polyfills (`System.Threading.Lock` no `net8.0`) |
+| `build/` | `Tec.Build.props` e `Tec.Build.targets` (canônicos) |
 | `docs/` · `.github/` | Documentação, workflows e scripts de integração |
 
-Os seis pacotes saem juntos, com a mesma versão. Os satélites têm acesso aos internos do núcleo (`InternalsVisibleTo`) e por isso removem dos próprios projetos os polyfills de `build/Polyfills` (que já estão compilados no núcleo).
+Os seis pacotes saem juntos, com a mesma versão. Os satélites têm acesso aos internos do núcleo (`InternalsVisibleTo`): telemetria, `GuidV7`, `SensitiveDataSanitizer` e a regra de `RequireTls`.
 
 Arquivos **canônicos**, mantidos no repositório `tec-workflows` e sincronizados (não os edite aqui; o job "Convenções" do CI falha se divergirem): `build/Tec.Build.props`, `build/Tec.Build.targets`, `Directory.Build.targets`, `.editorconfig`, `.gitattributes`, `nuget.config`, `.gitignore`, `.github/dependabot.yml`, `.github/zizmor.yml`. O que é do componente: `Directory.Build.props` (identidade e versão), `Directory.Packages.props`, os `.csproj` e os workflows `ci.yml`, `release.yml` e `performance.yml`.
 
@@ -110,7 +110,6 @@ Ver [CI/CD](../.github/workflows/README.md). Propriedades de build úteis:
 | `NU1010` | `TecReference` sem `PackageVersion` em `Directory.Packages.props` | Declare a versão publicada do componente |
 | `NU1902`/`NU1903` como erro | Dependência transitiva vulnerável (ex.: `System.Security.Cryptography.Pkcs` via `Microsoft.Data.SqlClient`) | Fixe a versão corrigida com `PackageVersion` no `Directory.Packages.props` (fixação transitiva ligada) e regenere os locks |
 | Erro "Use `<TecReference ...>` em vez de `PackageReference`" | `PackageReference` solto para um `TEC.*` | Use `TecReference` (build/Tec.Build.targets) |
-| `CS0436` num satélite | Polyfills compilados em duplicidade | Mantenha o `Compile Remove` dos polyfills no `.csproj` do satélite |
 
 ## 🛡️ Segurança
 
@@ -130,9 +129,9 @@ Para servir a qualquer aplicação (com ou sem CQRS). A integração é pelo `Sa
 </details>
 
 <details>
-<summary><b>Por que o `net8.0` usa EF Core 8 e o `net10.0` usa EF Core 10?</b></summary>
+<summary><b>Ainda dá para usar no .NET 8?</b></summary>
 
-O EF Core acompanha a versão do runtime (o EF Core 10 não suporta o `net8.0`); as versões ficam condicionadas ao alvo em `Directory.Packages.props`.
+Não. Os pacotes têm um único alvo, `net10.0` (LTS), com EF Core e Npgsql 10.x. Quem ainda roda no .NET 8 precisa migrar o runtime antes de adotar o componente.
 </details>
 
 ---

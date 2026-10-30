@@ -33,14 +33,17 @@ internal sealed class PostgreSqlInboxStore<TContext>(TContext db, TimeProvider t
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        // 23505 = unique_violation no PostgreSQL
+        // Só a chave primária do Inbox (23505 = unique_violation): duplicidade em tabela da aplicação não pode virar "já
+        // processada". Sem a chave no modelo, nada é reconhecido (mesma regra do SQL Server)
         var key = db.Model.FindEntityType(typeof(InboxMessage))?.FindPrimaryKey()?.GetName();
+        if (key is null)
+            return false;
         for (var current = exception; current is not null; current = current.InnerException)
         {
-            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg)
+            if (current is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg
+                && string.Equals(pg.ConstraintName, key, StringComparison.OrdinalIgnoreCase))
             {
-                if (key is null || string.Equals(pg.ConstraintName, key, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                return true;
             }
         }
 
@@ -50,17 +53,22 @@ internal sealed class PostgreSqlInboxStore<TContext>(TContext db, TimeProvider t
     public Task<int> PurgeAsync(DateTimeOffset processedBefore, int maxRows, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxRows, 1);
-        var n = ModelBuilderExtensions.NamesOf<InboxMessage>(db);
-        var sql = $"""
-            DELETE FROM {n.Table}
-            WHERE {n["MessageId"]} IN (
-                SELECT {n["MessageId"]} FROM {n.Table}
-                WHERE {n["ProcessedAt"]} < @before
-                LIMIT @max)
-            """;
         return db.Database.ExecuteSqlRawAsync(
-            sql,
-            [new NpgsqlParameter("@max", maxRows), new NpgsqlParameter("@before", processedBefore)],
+            PurgeSql(ModelBuilderExtensions.NamesOf<InboxMessage>(db)),
+            [new NpgsqlParameter("@max", maxRows), new NpgsqlParameter("@before", processedBefore.ToUniversalTime())],
             cancellationToken);
     }
+
+    /// <summary>
+    /// Limpeza pela chave inteira (mensagem + consumidor): a mesma mensagem processada por vários consumidores tem um registro
+    /// por consumidor, e apagar só pela mensagem levaria junto registros ainda dentro da retenção (reprocessamento na
+    /// reentrega). Exposto para os testes.
+    /// </summary>
+    internal static string PurgeSql(PostgreSqlNames n) => $"""
+        DELETE FROM {n.Table}
+        WHERE ({n["MessageId"]}, {n["Consumer"]}) IN (
+            SELECT {n["MessageId"]}, {n["Consumer"]} FROM {n.Table}
+            WHERE {n["ProcessedAt"]} < @before
+            LIMIT @max)
+        """;
 }

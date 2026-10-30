@@ -34,7 +34,7 @@ dotnet nuget add source https://nuget.pkg.github.com/tudoemcodigo/index.json -n 
 dotnet add package TEC.Messaging.SqlServer --version 0.0.1
 ```
 
-O pacote traz o `TEC.Messaging` junto. EF Core 8.x no `net8.0` e 10.x no `net10.0`.
+O pacote traz o `TEC.Messaging` junto. EF Core 10.x.
 
 ## 🚀 Início rápido
 
@@ -64,4 +64,4 @@ No caso de uso, só altere o agregado: o evento de domínio vira mensagem no mes
 
 Esquema e índices, concorrência e locks, limites, erros e o interceptor em detalhe: [docs/sqlserver.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/sqlserver.md). O fluxo completo: [Outbox](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/outbox.md) e [Inbox](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/inbox.md).
 
-`net8.0` e `net10.0` · sem Native AOT (EF Core) · [MIT](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código
+`net10.0` · sem Native AOT (EF Core) · [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código

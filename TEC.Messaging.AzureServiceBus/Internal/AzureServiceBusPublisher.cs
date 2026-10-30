@@ -1,8 +1,10 @@
-using System.Collections.Concurrent;
+using System.Globalization;
+using System.Net.Sockets;
 using System.Text;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Options;
 using TEC.Messaging.Diagnostics;
+using TEC.Messaging.Internal;
 using TEC.Messaging.Transport;
 
 namespace TEC.Messaging.AzureServiceBus.Internal;
@@ -10,17 +12,19 @@ namespace TEC.Messaging.AzureServiceBus.Internal;
 /// <summary>
 /// Publicador de mensagens para tópicos/filas do Azure Service Bus.
 /// </summary>
-internal sealed class AzureServiceBusPublisher(
-    AzureServiceBusConnection connection, IOptions<AzureServiceBusOptions> options)
-    : IMessagePublisher, IAsyncDisposable
+/// <remarks>
+/// Só falha transitória vira <see cref="AzureServiceBusUnavailableException"/> (o Outbox não conta tentativa): cliente
+/// impossível de criar, <see cref="ServiceBusException.IsTransient"/> (ou <c>ServiceBusy</c>, <c>ServiceTimeout</c>,
+/// <c>ServiceCommunicationProblem</c>), erro de rede e confirmação fora de <see cref="AzureServiceBusOptions.PublishTimeout"/>.
+/// O resto (mensagem grande demais, entidade inexistente ou desabilitada, permissão negada) sai como veio: conta tentativa e,
+/// esgotadas as tentativas, a mensagem vira <c>Dead</c> no Outbox. Credencial recusada também descarta o cliente, para a
+/// próxima tentativa reler o segredo.
+/// </remarks>
+internal sealed class AzureServiceBusPublisher(AzureServiceBusConnection connection, IOptions<AzureServiceBusOptions> options) : IMessagePublisher
 {
-    private readonly ConcurrentDictionary<string, ServiceBusSender> _senders = new(StringComparer.Ordinal);
-    private int _disposed;
-
     public async Task PublishAsync(MessageEnvelope envelope, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         var settings = options.Value;
         if (!settings.Enabled)
@@ -43,50 +47,72 @@ internal sealed class AzureServiceBusPublisher(
 
         message.ApplicationProperties["type"] = sentEnvelope.Type;
         message.ApplicationProperties["version"] = sentEnvelope.Version;
-        message.ApplicationProperties["occurred-at"] = sentEnvelope.OccurredAt.ToString("O");
+        message.ApplicationProperties["occurred-at"] = sentEnvelope.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         if (sentEnvelope.CausationId is not null)
             message.ApplicationProperties["causation-id"] = sentEnvelope.CausationId;
         if (sentEnvelope.TraceParent is not null)
             message.ApplicationProperties["traceparent"] = sentEnvelope.TraceParent;
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(settings.PublishTimeout);
+
+        ServiceBusSender sender;
         try
         {
-            var sender = await GetSenderAsync(destination, cancellationToken).ConfigureAwait(false);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(settings.PublishTimeout);
-
-            await sender.SendMessageAsync(message, timeout.Token).ConfigureAwait(false);
+            sender = await connection.GetSenderAsync(destination, timeout.Token).ConfigureAwait(false);
         }
-        catch (ServiceBusException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            throw new AzureServiceBusUnavailableException($"Falha no Azure Service Bus ({ex.Reason}): {ex.Message}", ex);
+            // Cofre fora, connection string inválida, conexão descartada: problema do transporte, não da mensagem
+            throw new AzureServiceBusUnavailableException($"Sem cliente do Azure Service Bus: {Describe(ex)}", ex);
+        }
+
+        try
+        {
+            await sender.SendMessageAsync(message, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new AzureServiceBusUnavailableException("Timeout aguardando confirmação do Azure Service Bus.", ex);
+            throw new AzureServiceBusUnavailableException($"O Azure Service Bus não confirmou a publicação em {settings.PublishTimeout}.", ex);
         }
-        catch (Exception ex) when (ex is not (OperationCanceledException or AzureServiceBusUnavailableException))
+        catch (UnauthorizedAccessException)
         {
-            throw new AzureServiceBusUnavailableException($"Falha ao publicar no Azure Service Bus: {ex.Message}", ex);
+            // Credencial recusada (chave rotacionada, SAS vencida, sem permissão de envio): a próxima tentativa relê o segredo.
+            // Conta tentativa: permissão negada de fato não se resolve sozinha
+            await connection.InvalidateAsync(sender).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex) when (IsTransient(ex))
+        {
+            throw new AzureServiceBusUnavailableException($"Falha transitória no Azure Service Bus: {Describe(ex)}", ex);
         }
     }
 
-    private async Task<ServiceBusSender> GetSenderAsync(string destination, CancellationToken ct)
+    /// <summary>Falha transitória (rede, serviço ocupado, tempo esgotado, cliente trocado durante a rotação).</summary>
+    internal static bool IsTransient(Exception exception)
     {
-        if (_senders.TryGetValue(destination, out var existing))
-            return existing;
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            switch (current)
+            {
+                case ServiceBusException sb when sb.IsTransient
+                    || sb.Reason is ServiceBusFailureReason.ServiceBusy or ServiceBusFailureReason.ServiceTimeout or ServiceBusFailureReason.ServiceCommunicationProblem:
+                case TimeoutException:
+                case SocketException:
+                case IOException:
+                case ObjectDisposedException:
+                    return true;
+                case ServiceBusException:
+                case UnauthorizedAccessException:
+                    // Classificação explícita do Service Bus: definitiva
+                    return false;
+            }
+        }
 
-        var client = await connection.GetClientAsync(ct).ConfigureAwait(false);
-        return _senders.GetOrAdd(destination, name => client.CreateSender(name));
+        return false;
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-
-        foreach (var sender in _senders.Values)
-            await sender.DisposeAsync().ConfigureAwait(false);
-        _senders.Clear();
-    }
+    private static string Describe(Exception ex) => ex is ServiceBusException sb
+        ? $"{sb.Reason}: {SensitiveDataSanitizer.Sanitize(sb.Message)}"
+        : $"{ex.GetType().Name}: {SensitiveDataSanitizer.Sanitize(ex.Message)}";
 }

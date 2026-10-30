@@ -23,7 +23,11 @@ public static class MessagingServiceCollectionExtensions
     ///     .AddEventTypesFromAssembly(typeof(PedidoAprovadoV1).Assembly)
     ///     .Map&lt;PedidoAprovado&gt;(e => new PedidoAprovadoV1(e.PedidoId, e.Total))
     ///     .UseSqlServer&lt;VendasDbContext&gt;()
-    ///     .UseRabbitMq(o => o.Exchange = "vendas.eventos")
+    ///     .UseRabbitMq(o =>
+    ///     {
+    ///         o.Exchange = "vendas.eventos";
+    ///         o.RoutingKeyPrefixToRemove = "vendas.";   // vendas.pedido-aprovado → routing key pedido-aprovado
+    ///     })
     ///     .AddOutboxRelay();
     /// </code>
     /// </example>

@@ -13,17 +13,9 @@
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
-  <!-- Npgsql EF Core acompanha o runtime: 8.x no net8.0 e 10.x no net10.0 (ambos LTS), versão no Directory.Packages.props -->
+  <!-- Npgsql EF Core 10.x, versão no Directory.Packages.props -->
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
-  </ItemGroup>
-
-  <!--
-    Satélite da família TEC.Messaging com acesso aos internos do núcleo (InternalsVisibleTo): usa os polyfills já
-    compilados no TEC.Messaging; uma segunda cópia local seria o conflito CS0436.
-  -->
-  <ItemGroup>
-    <Compile Remove="$(TecRepoRoot)build/Polyfills/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

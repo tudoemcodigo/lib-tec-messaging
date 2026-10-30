@@ -32,7 +32,7 @@ O pacote `TEC.Messaging.RabbitMQ` (RabbitMQ.Client 7, broker 3.13+ ou 4.x) entre
 
 | Peça | Papel |
 |---|---|
-| `RabbitMqPublisher` (`IMessagePublisher`) | Publicação com *publisher confirms* e mensagens persistentes, um canal compartilhado serializado por trava |
+| `RabbitMqPublisher` (`IMessagePublisher`) | Publicação `mandatory` com *publisher confirms* e mensagens persistentes, um canal compartilhado serializado por trava |
 | `RabbitMqConsumer` | Base dos consumidores: topologia, prefetch, ack manual depois do handler, retry escalonado, DLQ, pausa/retomada, drenagem no desligamento |
 | `RabbitMqDeadLetterAdministration` (`IDeadLetterAdministration`) | Contagem, listagem, reprocessamento e descarte da DLQ pelo protocolo AMQP |
 | `DeadLetterMonitor` | Conta as DLQs dos consumidores duráveis para a métrica `tec.messaging.dlq.messages` |
@@ -87,7 +87,11 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps) : RabbitMqCon
 }
 ```
 
-`ReceivedMessage` traz o `Envelope`, as falhas anteriores (`PreviousFailures`, cabeçalho `x-tec-attempt`) e se o broker reentregou (`Redelivered`). `ConsumeResult.Retry(reason, attempt)` permite informar a tentativa. A routing key de publicação é o `Type` com o prefixo `RoutingKeyPrefixToRemove` removido (`vendas.pedido-aprovado` → `pedido-aprovado`).
+`ReceivedMessage` traz o `Envelope`, as falhas anteriores (`PreviousFailures`, cabeçalho `x-tec-attempt`) e se o broker reentregou (`Redelivered`). `ConsumeResult.Retry(reason, attempt)` permite informar a tentativa. A routing key de publicação é o `Type` com o prefixo `RoutingKeyPrefixToRemove` removido (`vendas.pedido-aprovado` → `pedido-aprovado`). Sem o prefixo configurado, a ligação do consumidor teria de ser `vendas.pedido-aprovado`.
+
+### Publicação `mandatory`
+
+A publicação usa `mandatory: true`. Se nenhuma fila está ligada à exchange com a routing key da mensagem (binding esquecido, prefixo errado, consumidor que ainda não declarou a fila), o broker devolve a mensagem (`basic.return`) e o publicador lança `RabbitMqUnroutableException`. Ela **não** é `ITransportUnavailableException`: o Outbox conta a tentativa e, esgotadas as tentativas, a mensagem vira `Dead`, em vez de ser confirmada e descartada em silêncio. O canal continua em uso depois do retorno. Evento sem nenhum interessado precisa de pelo menos uma fila ligada (mesmo que só para auditoria) ou vai acumular mortas.
 
 Pausa (ex.: circuit breaker de uma dependência): resolva o consumidor (singleton) e chame `Pause()`/`Resume()`; `IsPaused` informa o estado. O consumo é cancelado no broker (`basic.cancel`) e as mensagens ficam na fila, sem requeue em laço.
 
@@ -155,7 +159,8 @@ O corpo lido aceita até 16 MiB e JSON com profundidade máxima de 64; payloads 
 |---|---|---|
 | `Enabled` | `true` | `false`: consumidores não sobem; a publicação falha com `RabbitMqUnavailableException` e o Outbox retém as mensagens sem contar tentativa |
 | `DrainTimeout` | 15 s | Espera pelos handlers em andamento no desligamento (0 a 5 min). Mantenha a soma abaixo do `HostOptions.ShutdownTimeout` (30 s por padrão) |
-| `ConnectionSecretName` | `rabbitmq` | Segredo do TEC.Vault com a URI AMQP (`amqp://` ou `amqps://`) |
+| `ConnectionSecretName` | `rabbitmq` | Segredo do TEC.Vault com a URI AMQP (`amqps://`; `amqp://` só sem exigência de TLS) |
+| `RequireTls` | `null` | `null` = exige TLS fora de Development (`IHostEnvironment.IsDevelopment()`). Exigindo, uma URI `amqp://` no segredo é recusada ao abrir a conexão, sem tocar no broker; `false` libera `amqp://` em qualquer ambiente |
 | `Exchange` | (obrigatória) | Exchange topic: minúsculas, dígitos, `.`, `-`, `_`, até 200 caracteres |
 | `RoutingKeyPrefixToRemove` | `""` | Prefixo removido do tipo para formar a routing key (até 100 caracteres) |
 | `PublishTimeout` | 10 s | Espera pela confirmação (1 s a 5 min) |
@@ -188,18 +193,20 @@ Opções inválidas falham na subida (`OptionsValidationException`); uma `QueueD
 |---|---|---|
 | `InvalidOperationException: Segredo 'rabbitmq' ... indisponível` | Segredo ausente no cofre | Crie o segredo com a URI |
 | `InvalidOperationException: O segredo ... não contém uma URI amqp:// ou amqps:// válida` | Conteúdo do segredo incorreto | Corrija a URI |
+| `InvalidOperationException: ... URI amqp:// (sem TLS), recusada ...` (dentro de `RabbitMqUnavailableException` na publicação) | `amqp://` com `RequireTls` exigido (padrão fora de Development) | Use `amqps://`; só com o tráfego protegido de outra forma, `RequireTls = false` |
+| `RabbitMqUnroutableException` | Nenhuma fila ligada para a routing key (publicação `mandatory`) | Crie a ligação ou ajuste `RoutingKeyPrefixToRemove`; as mensagens que morreram voltam com `RequeueAsync` do Outbox |
 | `PRECONDITION_FAILED` ao declarar fila | Fila existente com argumentos diferentes (ex.: clássica, outro `DeliveryLimit`, outro `RetryDelays`) | Apague a fila antiga ou use outro nome. Só o consumidor afetado deixa de subir: o publicador registra o aviso 4212 e continua publicando |
 | Health check `Unhealthy` | Broker fora ou credencial inválida | Verifique rede e segredo |
 | `RabbitMqCircuitOpenException` · health check "circuito aberto" | Falhas repetidas ao conectar (broker, rede, credencial ou cofre); log 4401 | Corrija a causa; o circuito testa de novo depois de `BreakDuration` (logs 4402 e 4403) |
 | `RabbitMqUnavailableException` | Transporte desligado, sem conexão ou canal, conexão perdida ou confirmação fora do prazo | O Outbox mantém a mensagem sem contar tentativa; verifique o broker (bloqueio por alarme de memória ou disco) |
 | Mensagens na DLQ | `Reject`, `MaxAttempts` esgotado, mensagem ilegível ou `x-delivery-limit` | Veja o cabeçalho `x-tec-error` (`ListAsync`), corrija a causa e `RequeueAsync` |
 
-Eventos de log: 4201 consumindo · 4202 pausado · 4203 falha no canal · 4204 falha no handler · 4205 retry · 4206 DLQ · 4207 mensagem inválida · 4208 falha ao confirmar · 4209 descartada (fila temporária) · 4210 transporte desligado · 4211 circuito aberto (nível Debug) · 4212 declaração recusada · 4213 devolvida sem consumir tentativa · 4214 drenagem expirada · 4301 falha ao contar a DLQ · 4401–4404 circuito.
+Eventos de log: 4201 consumindo · 4202 pausado · 4203 falha no canal · 4204 falha no handler · 4205 retry · 4206 DLQ · 4207 mensagem inválida · 4208 falha ao confirmar · 4209 descartada (fila temporária) · 4210 transporte desligado · 4211 circuito aberto (nível Debug) · 4212 declaração recusada · 4213 devolvida sem consumir tentativa · 4214 drenagem expirada · 4301 falha ao contar a DLQ · 4401–4404 circuito. No desligamento, uma mensagem que ainda esperava vaga de `ConcurrencyLimit` deixa de contar como "em processamento" na hora, sem segurar a drenagem até o `DrainTimeout`.
 
 ## 🛡️ Segurança
 
 > [!WARNING]
-> Use `amqps://` fora da máquina local. A URI (com senha) vem só do cofre e nunca é registrada em log.
+> Fora de Development, `amqp://` é recusado (`RequireTls`); use `amqps://`. A URI (com senha) vem só do cofre e nunca é registrada em log, nem na mensagem de recusa.
 
 > [!WARNING]
 > Conceda ao usuário do broker só o vhost e as permissões necessárias (`configure` só para as filas do serviço).

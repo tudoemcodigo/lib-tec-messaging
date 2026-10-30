@@ -53,7 +53,7 @@ public sealed class OutboxMessage
     /// <summary>Último erro de publicação.</summary>
     public string? LastError { get; set; }
 
-    /// <summary>Linha pendente a partir de um envelope.</summary>
+    /// <summary>Linha pendente a partir de um envelope (instantes gravados em UTC).</summary>
     /// <param name="envelope">Mensagem.</param>
     /// <param name="now">Agora (primeira tentativa imediata).</param>
     /// <returns>A linha.</returns>
@@ -65,13 +65,13 @@ public sealed class OutboxMessage
             Id = envelope.MessageId,
             Type = envelope.Type,
             Version = envelope.Version,
-            OccurredAt = envelope.OccurredAt,
+            OccurredAt = envelope.OccurredAt.ToUniversalTime(),
             CorrelationId = envelope.CorrelationId,
             CausationId = envelope.CausationId,
             TraceParent = envelope.TraceParent,
             Payload = envelope.Payload,
             Status = OutboxMessageStatus.Pending,
-            NextAttemptAt = now,
+            NextAttemptAt = now.ToUniversalTime(),
         };
     }
 

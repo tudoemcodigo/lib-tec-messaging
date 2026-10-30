@@ -7,7 +7,7 @@
 **Mensageria corporativa de alto desempenho: Outbox transacional, Inbox idempotente, sanitização de PII (LGPD), contratos versionados e suporte agnóstico a RabbitMQ, Azure Service Bus e AWS SQS/SNS.**
 
 [![CI](https://github.com/tudoemcodigo/lib-tec-messaging/actions/workflows/ci.yml/badge.svg)](https://github.com/tudoemcodigo/lib-tec-messaging/actions/workflows/ci.yml)
-![.NET](https://img.shields.io/badge/.NET-8%20%7C%2010-512BD4)
+![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 ![AOT](https://img.shields.io/badge/Native%20AOT-n%C3%BAcleo%20%26%20RabbitMQ-success)
 ![Versão](https://img.shields.io/badge/vers%C3%A3o-0.0.1-blue)
 [![Licença: Apache 2.0](https://img.shields.io/badge/licen%C3%A7a-Apache%202.0-blue)](LICENSE)
@@ -57,10 +57,10 @@
 | `TEC.Messaging.SqlServer` | Outbox e Inbox no SQL Server com EF Core, interceptor de eventos de domínio, administração | Persistência em SQL Server com EF Core | `TEC.Messaging`, EF Core |
 | `TEC.Messaging.PostgreSql` | Outbox e Inbox no PostgreSQL com EF Core (`FOR UPDATE SKIP LOCKED`, `RETURNING`), interceptor | Persistência em PostgreSQL com EF Core | `TEC.Messaging`, EF Core, Npgsql |
 | `TEC.Messaging.RabbitMQ` | Publicador com confirms, consumidores com concorrência paralela, retry escalonado, DLQ, pausa, health check | Broker RabbitMQ 3.13+/4.x | `TEC.Messaging`, `TEC.Vault`, RabbitMQ.Client 7, Polly.Core |
-| `TEC.Messaging.AzureServiceBus` | Publicador e consumidor para filas e tópicos do Azure Service Bus, confirms, DLQ, concorrência, health check | Nuvem Microsoft Azure | `TEC.Messaging`, `TEC.Vault`, Azure.Messaging.ServiceBus |
-| `TEC.Messaging.Aws` | Publicador e consumidor para filas Amazon SQS e tópicos SNS, long polling, concorrência, DLQ, health check | Nuvem Amazon Web Services (AWS) | `TEC.Messaging`, `TEC.Vault`, AWSSDK (SQS/SNS) |
+| `TEC.Messaging.AzureServiceBus` | Publicador e consumidor para filas e tópicos do Azure Service Bus, confirms, reenvio agendado com espera crescente, DLQ, concorrência, rotação de credencial, health check | Nuvem Microsoft Azure | `TEC.Messaging`, `TEC.Vault`, Azure.Messaging.ServiceBus |
+| `TEC.Messaging.Aws` | Publicador e consumidor para filas Amazon SQS e tópicos SNS, long polling com renovação de visibilidade, concorrência, DLQ, rotação de credencial, health check | Nuvem Amazon Web Services (AWS) | `TEC.Messaging`, `TEC.Vault`, AWSSDK (SQS/SNS) |
 
-Todos os pacotes são versionados e distribuídos em conjunto com rigorosa compatibilidade.
+Os seis pacotes têm a mesma versão e saem juntos.
 
 ---
 
@@ -122,7 +122,12 @@ builder.Services.AddTecMessaging()
     .AddEventType<PedidoAprovadoV1>()
     .Map<PedidoAprovado>(e => new PedidoAprovadoV1(e.PedidoId, e.Total))
     .UseSqlServer<VendasDbContext>()                                  // Outbox/Inbox no banco da aplicação
-    .UseRabbitMq(o => o.Exchange = "vendas.eventos")                  // URI no segredo "rabbitmq" do TEC.Vault
+    .UseRabbitMq(o =>                                                 // URI no segredo "rabbitmq" do TEC.Vault
+    {
+        o.Exchange = "vendas.eventos";
+        o.RoutingKeyPrefixToRemove = "vendas.";                       // routing key = tipo sem o prefixo ("pedido-aprovado")
+    })
+    .AddConsumer<Faturamento>()                                       // o consumidor do exemplo abaixo
     .AddOutboxRelay();
 
 builder.Services.AddDbContext<VendasDbContext>((sp, o) => o.UseSqlServer(conexao).UseTecMessaging(sp));
@@ -182,7 +187,7 @@ Também: [🧰 Samples](samples/README.md) · [⚙️ CI/CD](.github/workflows/R
 
 | Item | Suporte |
 |---|---|
-| .NET | 8 (LTS) e 10 (LTS) |
+| .NET | 10 (LTS) |
 | Native AOT | `TEC.Messaging` e `TEC.Messaging.RabbitMQ` (contratos com `JsonTypeInfo`); provedores EF Core e SDKs de nuvem marcam `<IsAotCompatible>false</IsAotCompatible>` |
 | Bancos de Dados | SQL Server 2016+ / Azure SQL (`OUTPUT`, `READPAST`) e PostgreSQL 12+ (`SKIP LOCKED`, `RETURNING`) |
 | Brokers | RabbitMQ 3.13+ e 4.x (filas quorum), Azure Service Bus (Standard/Premium), AWS SQS/SNS |

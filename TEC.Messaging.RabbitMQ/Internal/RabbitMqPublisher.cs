@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 using TEC.Messaging.Diagnostics;
 using TEC.Messaging.RabbitMQ.Consumers;
 using TEC.Messaging.Transport;
@@ -16,7 +17,9 @@ namespace TEC.Messaging.RabbitMQ.Internal;
 /// <remarks>
 /// Falhas do transporte (desligado, sem conexão ou canal, conexão perdida, confirmação fora do prazo) saem como
 /// <see cref="RabbitMqUnavailableException"/> (ou <see cref="RabbitMqCircuitOpenException"/>): o Outbox não conta tentativa.
-/// Recusa da mensagem pelo broker (nack, canal fechado com a conexão aberta) sai como veio e conta tentativa.
+/// Recusa da mensagem pelo broker (nack, canal fechado com a conexão aberta) sai como veio e conta tentativa. A publicação é
+/// <c>mandatory</c>: mensagem sem fila ligada volta do broker (<c>basic.return</c>) e sai como
+/// <see cref="RabbitMqUnroutableException"/>, que também conta tentativa.
 /// </remarks>
 internal sealed partial class RabbitMqPublisher(
     RabbitMqConnection connection, IOptions<RabbitMqOptions> options, IServiceProvider services, ILogger<RabbitMqPublisher>? logger = null)
@@ -38,8 +41,9 @@ internal sealed partial class RabbitMqPublisher(
         // O consumidor continua o trace a partir do span de publicação
         var sent = activity?.Id is { Length: <= MessageEnvelope.MaxTraceParentLength } id ? envelope with { TraceParent = id } : envelope;
 
-        // Sem "mandatory": evento sem fila ligada não é erro e não pode travar o Outbox
-        await PublishRawAsync(settings.Exchange, routingKey, false, AmqpEnvelope.Properties(sent), AmqpEnvelope.Serialize(sent), cancellationToken)
+        // Com "mandatory": evento sem fila ligada (binding esquecido, routing key errada) volta do broker e conta tentativa, em
+        // vez de ser descartado em silêncio com a confirmação positiva
+        await PublishRawAsync(settings.Exchange, routingKey, true, AmqpEnvelope.Properties(sent), AmqpEnvelope.Serialize(sent), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -63,6 +67,12 @@ internal sealed partial class RabbitMqPublisher(
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(settings.PublishTimeout);
             await channel.BasicPublishAsync(exchange, routingKey, mandatory, properties, body, timeout.Token).ConfigureAwait(false);
+        }
+        catch (PublishException ex) when (ex.IsReturn)
+        {
+            // basic.return: o canal segue íntegro (não é descartado). Falha de roteamento, não do transporte: conta tentativa
+            throw new RabbitMqUnroutableException(
+                $"O RabbitMQ devolveu a mensagem: nenhuma fila ligada à exchange '{Limit(exchange)}' com a routing key '{Limit(routingKey)}'.", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -103,6 +113,8 @@ internal sealed partial class RabbitMqPublisher(
                 _lock.Release();
         }
     }
+
+    private static string Limit(string value) => value.Length > 200 ? value[..200] : value;
 
     private async Task<IChannel> ChannelAsync(CancellationToken ct)
     {

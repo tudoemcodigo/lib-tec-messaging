@@ -52,7 +52,7 @@ public sealed class OutboxMessage
     /// <summary>Último erro de publicação.</summary>
     public string? LastError { get; set; }
 
-    /// <summary>Linha pendente a partir de um envelope.</summary>
+    /// <summary>Linha pendente a partir de um envelope (instantes gravados em UTC, exigência do Npgsql para <c>timestamptz</c>).</summary>
     public static OutboxMessage Create(MessageEnvelope envelope, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(envelope);
@@ -61,13 +61,13 @@ public sealed class OutboxMessage
             Id = envelope.MessageId,
             Type = envelope.Type,
             Version = envelope.Version,
-            OccurredAt = envelope.OccurredAt,
+            OccurredAt = envelope.OccurredAt.ToUniversalTime(),
             CorrelationId = envelope.CorrelationId,
             CausationId = envelope.CausationId,
             TraceParent = envelope.TraceParent,
             Payload = envelope.Payload,
             Status = OutboxMessageStatus.Pending,
-            NextAttemptAt = now,
+            NextAttemptAt = now.ToUniversalTime(),
         };
     }
 

@@ -49,6 +49,7 @@ Fora de `docs/`: [🧰 Samples](../samples/README.md) · [⚙️ CI/CD](../.gith
 | [0006](adr/0006-sanitizacao-de-pii-e-credenciais-em-erros-logs-e-cabecalhos.md) | Sanitização de PII e credenciais em erros, logs e cabeçalhos |
 | [0007](adr/0007-retry-escalonado-e-dlq-no-rabbitmq-com-filas-de-espera.md) | Retry escalonado e DLQ no RabbitMQ com filas de espera |
 | [0008](adr/0008-nucleo-agnostico-com-bancos-e-brokers-em-pacotes-satelites.md) | Núcleo agnóstico com bancos e brokers em pacotes satélites |
+| [0009](adr/0009-reenvio-agendado-no-azure-service-bus-e-rotacao-de-credenciais.md) | Reenvio agendado no Azure Service Bus, rotação de credenciais e TLS obrigatório |
 
 ---
 

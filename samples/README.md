@@ -20,4 +20,5 @@ dotnet run --project samples/TEC.Messaging.SampleWorker
 
 > [!WARNING]
 > O exemplo usa o TEC.Vault em memória e `EnsureCreated` por simplicidade. Em produção, o segredo vem de um cofre real e o
-> esquema, de migrations.
+> esquema, de migrations. O `amqp://` acima só é aceito em Development (ambiente em que o user-secrets é carregado);
+> fora dele o transporte exige `amqps://` (`RequireTls`).

@@ -14,7 +14,7 @@
 
 | Peça | Papel |
 |---|---|
-| `IMessagePublisher` | Publica com *publisher confirms* e mensagens persistentes; transporte fora do ar sai como `ITransportUnavailableException` (o Outbox não conta tentativa) |
+| `IMessagePublisher` | Publica com *publisher confirms*, `mandatory` e mensagens persistentes; transporte fora do ar sai como `ITransportUnavailableException` (o Outbox não conta tentativa); mensagem sem fila ligada sai como `RabbitMqUnroutableException` (conta tentativa) |
 | `RabbitMqConsumer` | Base dos consumidores: filas **quorum**, ack só depois do handler, retry por filas de espera com TTL (`fila.retry.<atraso>`), DLQ (`fila.dlq`), `Pause()`/`Resume()`, concorrência (`ConcurrencyLimit`, 1 a 200) e desligamento com drenagem (`DrainTimeout`) |
 | `IDeadLetterAdministration` | Contar, listar, reprocessar e descartar mensagens da DLQ, pelo protocolo AMQP |
 | Conexão | Única por processo, URI AMQP lida do segredo `rabbitmq` do TEC.Vault, com circuit breaker (`Polly.Core`) e reconexão com jitter |
@@ -50,7 +50,11 @@ using TEC.Messaging.RabbitMQ.DependencyInjection;
 builder.Services.AddTecVault(...);                       // segredo "rabbitmq" = amqps://usuario:senha@host/vhost
 builder.Services.AddTecMessaging()
     .UseSqlServer<VendasDbContext>()
-    .UseRabbitMq(o => o.Exchange = "vendas.eventos")
+    .UseRabbitMq(o =>
+    {
+        o.Exchange = "vendas.eventos";
+        o.RoutingKeyPrefixToRemove = "vendas.";            // "vendas.pedido-aprovado" vira a routing key "pedido-aprovado"
+    })
     .AddConsumer<Faturamento>()
     .AddOutboxRelay();
 builder.Services.AddHealthChecks().AddTecRabbitMq();
@@ -65,10 +69,10 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps) : RabbitMqCon
 }
 ```
 
-Use `amqps://` fora da máquina local: a URI (com senha) vem só do cofre e nunca é registrada em log.
+Fora de Development, `amqp://` é recusado (`RequireTls`): use `amqps://`. A URI (com senha) vem só do cofre e nunca é registrada em log.
 
 ## 📚 Documentação
 
 Topologia, formato no fio, opções (`RabbitMqOptions`, `QueueDefinition`), circuit breaker, administração da DLQ, logs e erros: [docs/rabbitmq.md](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/rabbitmq.md). O desenho do retry e da DLQ: [ADR 0007](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/docs/adr/0007-retry-escalonado-e-dlq-no-rabbitmq-com-filas-de-espera.md).
 
-`net8.0` e `net10.0` · Native AOT · [MIT](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código
+`net10.0` · Native AOT · [Apache 2.0](https://github.com/tudoemcodigo/lib-tec-messaging/blob/main/LICENSE) · Roberto Oliveira, equipe Tudo em Código

@@ -15,16 +15,29 @@ public sealed class AzureServiceBusOptions
     /// <summary>Nome do segredo no TEC.Vault com a connection string do Service Bus. Padrão <c>azure-servicebus</c>.</summary>
     public string ConnectionSecretName { get; set; } = "azure-servicebus";
 
-    /// <summary>Tópico padrão de saída para os eventos de integração.</summary>
+    /// <summary>
+    /// Tópico (ou fila) padrão de saída para os eventos de integração. Vazio = a entidade tem o nome do tipo da mensagem. O
+    /// health check abre um link de envio com esta entidade; vazio, ele responde <c>Degraded</c> sem testar a rede.
+    /// </summary>
     public string DefaultTopic { get; set; } = "";
+
+    /// <summary>
+    /// Exige TLS: connection string do emulador local (<c>UseDevelopmentEmulator=true</c>, AMQP sem TLS) é recusada ao criar o
+    /// cliente. <c>null</c> (padrão) = exige fora de Development (<c>IHostEnvironment.IsDevelopment()</c>). Fora do emulador o
+    /// SDK sempre usa TLS.
+    /// </summary>
+    public bool? RequireTls { get; set; }
 
     /// <summary>Tempo limite para a confirmação de publicação. Padrão 10 s.</summary>
     public TimeSpan PublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
 }
 
 /// <summary>
-/// Publicação no Azure Service Bus impossível por indisponibilidade do transporte.
-/// O Outbox devolve as mensagens sem contar tentativa (<see cref="ITransportUnavailableException"/>).
+/// Publicação no Azure Service Bus impossível por indisponibilidade do transporte: transporte desligado, cliente impossível de
+/// criar (cofre fora, connection string inválida), falha transitória do serviço (<c>ServiceBusException.IsTransient</c>, como
+/// <c>ServiceBusy</c>, <c>ServiceTimeout</c> e <c>ServiceCommunicationProblem</c>), erro de rede ou confirmação fora do prazo. O
+/// Outbox devolve as mensagens sem contar tentativa (<see cref="ITransportUnavailableException"/>). Falhas definitivas (tamanho,
+/// entidade inexistente ou desabilitada, permissão negada) saem como vieram e contam tentativa.
 /// </summary>
 public sealed class AzureServiceBusUnavailableException : Exception, ITransportUnavailableException
 {
