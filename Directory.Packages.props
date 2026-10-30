@@ -18,7 +18,7 @@
   <!-- Terceiros -->
   <ItemGroup>
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.502.61" />
-    <PackageVersion Include="AWSSDK.SQS" Version="3.7.502.57" />
+    <PackageVersion Include="AWSSDK.SQS" Version="4.0.100.20" />
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.13" />
