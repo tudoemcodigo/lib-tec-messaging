@@ -25,6 +25,7 @@
 - [🧬 Ecossistema TEC](#-ecossistema-tec)
 - [📥 Instalação](#-instalação)
 - [🚀 Início rápido](#-início-rápido)
+- [🧩 Diagrama de arquitetura](#-diagrama-de-arquitetura)
 - [📚 Documentação](#-documentação)
 - [⚡ Compatibilidade](#-compatibilidade)
 - [🛡️ Segurança](#️-segurança)
@@ -159,6 +160,91 @@ public sealed class Faturamento(RabbitMqConsumerDependencies deps, IServiceScope
 ```
 
 ---
+
+## 🧩 Diagrama de arquitetura
+
+Componentes e ligações do `TEC.Messaging`, gerados pelo [GitDiagram](https://gitdiagram.com/tudoemcodigo/lib-tec-messaging) a partir da `main` em 02/11/2026. O diagrama é gerado por IA a partir de uma amostra do código: use-o como mapa de leitura, não como contrato.
+
+```mermaid
+flowchart TD
+
+subgraph group_core["Messaging core"]
+  node_domain["Domain events"]
+  node_contracts["Event contracts"]
+  node_envelopes["Message envelopes<br/>[MessageEnvelope.cs]"]
+  node_context["Correlation context<br/>[MessageContext.cs]"]
+  node_relay["Outbox relay<br/>[OutboxRelay.cs]"]
+  node_inbox["Inbox abstraction<br/>[IInboxStore.cs]"]
+  node_sanitize["PII sanitizer"]
+  node_diagnostics["Diagnostics"]
+end
+
+subgraph group_persistence["Persistence adapters"]
+  node_sqloutbox[("SQL Server stores")]
+  node_sqlinterceptor["SQL Server interceptor"]
+  node_pgoutbox[("PostgreSQL stores")]
+  node_pginterceptor["PostgreSQL interceptor"]
+end
+
+subgraph group_rabbit["RabbitMQ transport"]
+  node_rabbitpub["Rabbit publisher"]
+  node_rabbitconsumer["Rabbit consumer"]
+  node_rabbitadmin["DLQ administration"]
+end
+
+subgraph group_azure["Azure transport"]
+  node_azurepub["Azure publisher"]
+  node_azureconsumer["Azure consumer"]
+  node_azureconnection["Azure connection"]
+end
+
+subgraph group_aws["AWS transport"]
+  node_awspub["AWS publisher"]
+  node_awsconsumer["SQS consumer<br/>[AwsSqsConsumer.cs]"]
+  node_awsclients["AWS clients"]
+end
+
+node_application(("Application"))
+
+node_application -->|"raises events"| node_domain
+node_domain -->|"creates envelopes"| node_envelopes
+node_contracts -->|"defines metadata"| node_envelopes
+node_context -->|"adds correlation"| node_envelopes
+node_application -->|"saves events"| node_sqlinterceptor
+node_application -->|"saves events"| node_pginterceptor
+node_sqlinterceptor -.->|"stores messages"| node_sqloutbox
+node_pginterceptor -.->|"stores messages"| node_pgoutbox
+node_sqloutbox -->|"provides messages"| node_relay
+node_pgoutbox -->|"provides messages"| node_relay
+node_relay -->|"publishes via"| node_rabbitpub
+node_relay -->|"publishes via"| node_azurepub
+node_relay -->|"publishes via"| node_awspub
+node_rabbitconsumer -->|"deduplicates with"| node_inbox
+node_azureconsumer -.->|"deduplicates with"| node_inbox
+node_awsconsumer -.->|"deduplicates with"| node_inbox
+node_rabbitconsumer -->|"supports DLQ ops"| node_rabbitadmin
+node_azurepub -->|"gets sender"| node_azureconnection
+node_azureconsumer -->|"gets client"| node_azureconnection
+node_awspub -.->|"uses clients"| node_awsclients
+node_awsconsumer -->|"uses clients"| node_awsclients
+node_rabbitconsumer -->|"records activity"| node_diagnostics
+node_azureconsumer -->|"sanitizes data"| node_sanitize
+node_awsconsumer -->|"records activity"| node_diagnostics
+
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_domain,node_contracts,node_envelopes,node_context,node_relay,node_inbox,node_sanitize,node_diagnostics toneBlue
+class node_sqloutbox,node_sqlinterceptor,node_pgoutbox,node_pginterceptor toneAmber
+class node_rabbitpub,node_rabbitconsumer,node_rabbitadmin toneMint
+class node_azurepub,node_azureconsumer,node_azureconnection toneRose
+class node_awspub,node_awsconsumer,node_awsclients,node_application toneIndigo
+```
 
 ## 📚 Documentação
 
